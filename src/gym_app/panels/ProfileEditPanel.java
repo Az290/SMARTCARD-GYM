@@ -1,6 +1,7 @@
 package gym_app.panels;
 
 import gym_app.MainFrame;
+import gym_app.SmartCardService;
 import gym_app.components.*;
 import gym_app.SecurityUtils;
 
@@ -19,9 +20,11 @@ import java.sql.*;
 
 /**
  * Màn hình sửa thông tin cá nhân
- *  Avatar: PC mã hóa → Card lưu encrypted → PC giải mã khi hiển thị
- *  Info: Card mã hóa → Card giải mã khi get
- *  Database: Mã hóa AES theo SecurityUtils
+ * 
+ * ✅ v2.1 - CẬP NHẬT:
+ * - Avatar chuẩn hóa 48x48 pixels (luôn < 2KB)
+ * - Mỗi trường (name, phone, email, birthDate, address) mã hóa riêng
+ * - Xác thực PIN trước khi lưu
  */
 public class ProfileEditPanel extends JPanel {
 
@@ -37,7 +40,9 @@ public class ProfileEditPanel extends JPanel {
     private byte[] newAvatarData;      // Avatar MỚI được chọn (plaintext)
     private byte[] currentAvatarData;  // Avatar HIỆN TẠI từ thẻ (plaintext - đã decrypt)
     
-    private static final int AVATAR_MAX_SIZE = 10240;  // 10KB
+    // ✅ MỚI: Chuẩn hóa avatar 48x48
+    private static final int AVATAR_SIZE = SmartCardService.AVATAR_STANDARD_SIZE; // 48x48
+    private static final float AVATAR_QUALITY = 0.7f;
     private static final int MAX_NAME_LENGTH = 40;
 
     public ProfileEditPanel(MainFrame mainFrame) {
@@ -56,7 +61,7 @@ public class ProfileEditPanel extends JPanel {
         content.setBackground(new Color(30, 30, 45));
         content.setBorder(new EmptyBorder(30, 40, 30, 40));
 
-        JLabel title = new JLabel(" THÔNG TIN CÁ NHÂN");
+        JLabel title = new JLabel("📝 THÔNG TIN CÁ NHÂN");
         title.setFont(new Font("Segoe UI", Font.BOLD, 28));
         title.setForeground(new Color(52, 152, 219));
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -68,7 +73,7 @@ public class ProfileEditPanel extends JPanel {
         buttonPanel.setBackground(new Color(30, 30, 45));
         buttonPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        GymButton btnSave = GymButton.success(" LƯU THAY ĐỔI");
+        GymButton btnSave = GymButton.success("💾 LƯU THAY ĐỔI");
         btnSave.setPreferredSize(new Dimension(200, 50));
         btnSave.addActionListener(e -> saveProfile());
 
@@ -104,7 +109,7 @@ public class ProfileEditPanel extends JPanel {
         panel.setMaximumSize(new Dimension(300, 300));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel titleLabel = new JLabel(" ẢNH ĐẠI DIỆN");
+        JLabel titleLabel = new JLabel("📷 ẢNH ĐẠI DIỆN");
         titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
         titleLabel.setForeground(new Color(0, 200, 180));
         titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -116,12 +121,13 @@ public class ProfileEditPanel extends JPanel {
         lblAvatar.setBorder(BorderFactory.createLineBorder(new Color(100, 100, 120), 2));
         setDefaultAvatar();
 
-        GymButton btnUpload = new GymButton(" Chọn ảnh mới", new Color(100, 100, 130));
+        GymButton btnUpload = new GymButton("📁 Chọn ảnh mới", new Color(100, 100, 130));
         btnUpload.setMaximumSize(new Dimension(200, 35));
         btnUpload.setAlignmentX(Component.CENTER_ALIGNMENT);
         btnUpload.addActionListener(e -> uploadAvatar());
 
-        lblAvatarInfo = new JLabel("Ảnh tự động nén về ≤10KB");
+        // ✅ MỚI: Thông báo chuẩn hóa 48x48
+        lblAvatarInfo = new JLabel("Ảnh sẽ được chuẩn hóa " + AVATAR_SIZE + "x" + AVATAR_SIZE);
         lblAvatarInfo.setFont(new Font("Segoe UI", Font.PLAIN, 11));
         lblAvatarInfo.setForeground(Color.GRAY);
         lblAvatarInfo.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -148,7 +154,7 @@ public class ProfileEditPanel extends JPanel {
         panel.setMaximumSize(new Dimension(600, 400));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel formTitle = new JLabel(" THÔNG TIN CÁ NHÂN");
+        JLabel formTitle = new JLabel("📋 THÔNG TIN CÁ NHÂN");
         formTitle.setFont(new Font("Segoe UI", Font.BOLD, 16));
         formTitle.setForeground(new Color(0, 200, 180));
 
@@ -160,17 +166,17 @@ public class ProfileEditPanel extends JPanel {
 
         panel.add(formTitle);
         panel.add(Box.createVerticalStrut(20));
-        panel.add(createFieldRow(" Họ và tên *", txtName));
+        panel.add(createFieldRow("👤 Họ và tên *", txtName));
         panel.add(Box.createVerticalStrut(15));
-        panel.add(createFieldRow(" Số điện thoại *", txtPhone));
+        panel.add(createFieldRow("📱 Số điện thoại *", txtPhone));
         panel.add(Box.createVerticalStrut(15));
-        panel.add(createFieldRow(" Email", txtEmail));
+        panel.add(createFieldRow("📧 Email", txtEmail));
         panel.add(Box.createVerticalStrut(15));
-        panel.add(createFieldRow(" Ngày sinh (dd/MM/yyyy)", txtBirthDate));
+        panel.add(createFieldRow("🎂 Ngày sinh (dd/MM/yyyy)", txtBirthDate));
         panel.add(Box.createVerticalStrut(15));
-        panel.add(createFieldRow(" Địa chỉ", txtAddress));
+        panel.add(createFieldRow("🏠 Địa chỉ", txtAddress));
 
-        JLabel lblImportant = new JLabel("<html><span style='color:#e74c3c'>️ SĐT dùng để mở khóa thẻ nếu quên PIN!</span></html>");
+        JLabel lblImportant = new JLabel("<html><span style='color:#e74c3c'>⚠️ SĐT dùng để mở khóa thẻ nếu quên PIN!</span></html>");
         lblImportant.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         lblImportant.setAlignmentX(Component.LEFT_ALIGNMENT);
         
@@ -228,6 +234,9 @@ public class ProfileEditPanel extends JPanel {
         lblAvatar.setIcon(new ImageIcon(img));
     }
 
+    /**
+     * ✅ MỚI: Upload avatar với chuẩn hóa 48x48
+     */
     private void uploadAvatar() {
         JFileChooser chooser = new JFileChooser();
         chooser.setFileFilter(new FileNameExtensionFilter("Image files", "jpg", "jpeg", "png", "gif", "bmp"));
@@ -243,34 +252,37 @@ public class ProfileEditPanel extends JPanel {
                 }
                 
                 setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-                lblAvatarInfo.setText("⏳ Đang nén ảnh...");
+                lblAvatarInfo.setText("⏳ Đang xử lý...");
                 lblAvatarInfo.setForeground(new Color(241, 196, 15));
                 
-                //  Tự động nén để vừa 10KB
-                byte[] imageData = compressToFit(originalImg);
+                // ✅ MỚI: Chuẩn hóa 48x48, quality 0.7 - LUÔN THÀNH CÔNG
+                byte[] imageData = standardizeAvatar(originalImg);
                 
                 setCursor(Cursor.getDefaultCursor());
                 
                 if (imageData == null || imageData.length == 0) {
-                    imageData = createPlaceholderAvatar();
-                    lblAvatarInfo.setText("️ Dùng ảnh mặc định (" + imageData.length + " bytes)");
-                } else {
-                    lblAvatarInfo.setText(" " + String.format("%.1f KB", imageData.length / 1024.0));
-                    lblAvatarInfo.setForeground(new Color(46, 204, 113));
+                    showError("Không thể xử lý ảnh!");
+                    return;
                 }
-
-                //  Lưu PLAINTEXT vào newAvatarData
+                
+                // Lưu PLAINTEXT vào newAvatarData
                 newAvatarData = imageData;
                 
-                // Preview
+                // Hiển thị kích thước
+                lblAvatarInfo.setText("✅ " + AVATAR_SIZE + "x" + AVATAR_SIZE + " (" + 
+                    String.format("%.1f KB", imageData.length / 1024.0) + ")");
+                lblAvatarInfo.setForeground(new Color(46, 204, 113));
+                
+                // Preview (scale lên 100x100 để hiển thị)
                 BufferedImage preview = resizeImage(originalImg, 100, 100);
                 lblAvatar.setIcon(new ImageIcon(preview));
                 
                 JOptionPane.showMessageDialog(this,
                     "<html><center>" +
-                    "<h3> Đã chọn ảnh mới!</h3>" +
+                    "<h3>✅ Đã chọn ảnh mới!</h3>" +
+                    "<p>Kích thước: <b>" + AVATAR_SIZE + "x" + AVATAR_SIZE + " pixels</b></p>" +
                     "<p>Dung lượng: <b>" + String.format("%.1f KB", imageData.length / 1024.0) + "</b></p>" +
-                    "<p style='color:#f1c40f'>️ Ảnh sẽ được mã hóa khi lưu vào thẻ</p>" +
+                    "<p style='color:#f1c40f'>🔐 Ảnh sẽ được mã hóa khi lưu vào thẻ</p>" +
                     "</center></html>",
                     "Thành công", 
                     JOptionPane.INFORMATION_MESSAGE);
@@ -278,49 +290,45 @@ public class ProfileEditPanel extends JPanel {
             } catch (Exception ex) {
                 setCursor(Cursor.getDefaultCursor());
                 showError("Lỗi: " + ex.getMessage());
+                ex.printStackTrace();
             }
         }
     }
 
-    private byte[] compressToFit(BufferedImage original) {
-        int[] sizes = {128, 96, 64, 48, 40, 32, 28, 24, 20, 16, 12, 10, 8};
-        float[] qualities = {0.85f, 0.7f, 0.6f, 0.5f, 0.4f, 0.3f, 0.2f, 0.15f, 0.1f};
-        
-        byte[] result = null;
-        
-        for (int size : sizes) {
-            for (float quality : qualities) {
-                byte[] data = compressImage(original, size, quality);
-                if (data != null && data.length <= AVATAR_MAX_SIZE) {
-                    if (result == null || data.length > result.length) {
-                        result = data;
-                    }
-                    if (data.length >= 8192) { // ≥8KB là tốt
-                        return data;
-                    }
-                }
-            }
-            if (result != null && result.length >= 4096) { // ≥4KB là chấp nhận được
-                return result;
-            }
-        }
-        
-        return result;
-    }
-
-    private byte[] createPlaceholderAvatar() {
+    /**
+     * ✅ MỚI: Chuẩn hóa avatar về 48x48 pixels
+     * Luôn thành công, output < 2KB
+     */
+    private byte[] standardizeAvatar(BufferedImage original) {
         try {
-            BufferedImage img = new BufferedImage(8, 8, BufferedImage.TYPE_INT_RGB);
-            Graphics2D g = img.createGraphics();
-            g.setColor(new Color(100, 100, 130));
-            g.fillRect(0, 0, 8, 8);
-            g.setColor(new Color(150, 150, 170));
-            g.fillOval(2, 1, 4, 3);
-            g.fillRect(1, 4, 6, 4);
-            g.dispose();
-            return compressImage(img, 8, 0.1f);
+            // Resize về 48x48
+            BufferedImage resized = resizeImage(original, AVATAR_SIZE, AVATAR_SIZE);
+            
+            // Nén JPEG với quality 0.7
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            
+            ImageWriter writer = ImageIO.getImageWritersByFormatName("jpg").next();
+            ImageWriteParam param = writer.getDefaultWriteParam();
+            if (param.canWriteCompressed()) {
+                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                param.setCompressionQuality(AVATAR_QUALITY);
+            }
+            
+            writer.setOutput(ImageIO.createImageOutputStream(baos));
+            writer.write(null, new IIOImage(resized, null, null), param);
+            writer.dispose();
+            
+            byte[] result = baos.toByteArray();
+            
+            System.out.println("[Avatar] ✅ Standardized to " + AVATAR_SIZE + "x" + AVATAR_SIZE + 
+                ", size: " + result.length + " bytes");
+            
+            return result;
+            
         } catch (Exception e) {
-            return new byte[0];
+            System.out.println("[Avatar] ❌ Error: " + e.getMessage());
+            e.printStackTrace();
+            return null;
         }
     }
 
@@ -328,35 +336,15 @@ public class ProfileEditPanel extends JPanel {
         BufferedImage resized = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
         Graphics2D g = resized.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.drawImage(original, 0, 0, width, height, null);
         g.dispose();
         return resized;
     }
 
-    private byte[] compressImage(BufferedImage original, int size, float quality) {
-        try {
-            BufferedImage resized = resizeImage(original, size, size);
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            
-            ImageWriter writer = ImageIO.getImageWritersByFormatName("jpg").next();
-            ImageWriteParam param = writer.getDefaultWriteParam();
-            if (param.canWriteCompressed()) {
-                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-                param.setCompressionQuality(quality);
-            }
-            
-            writer.setOutput(ImageIO.createImageOutputStream(baos));
-            writer.write(null, new IIOImage(resized, null, null), param);
-            writer.dispose();
-            
-            return baos.toByteArray();
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     /**
-     *  Load dữ liệu hiện tại
+     * Load dữ liệu hiện tại
      */
     private void loadCurrentData() {
         newAvatarData = null;
@@ -378,12 +366,12 @@ public class ProfileEditPanel extends JPanel {
                     String phoneEnc = rs.getString("phone_enc");
                     String birthEnc = rs.getString("birth_date_enc");
                     
-                    //  GIẢI MÃ trước khi hiển thị
+                    // GIẢI MÃ trước khi hiển thị
                     txtName.setText(nameEnc != null ? SecurityUtils.decrypt(nameEnc) : "");
                     txtPhone.setText(phoneEnc != null ? SecurityUtils.decrypt(phoneEnc) : "");
                     txtBirthDate.setText(birthEnc != null ? SecurityUtils.decrypt(birthEnc) : "");
                     
-                    System.out.println("[Profile]  Loaded DECRYPTED info from database");
+                    System.out.println("[Profile] ✅ Loaded DECRYPTED info from database");
                 } else {
                     // Fallback từ MainFrame
                     txtName.setText(mainFrame.getCurrentName() != null ? mainFrame.getCurrentName() : "");
@@ -394,35 +382,32 @@ public class ProfileEditPanel extends JPanel {
                 rs.close();
                 ps.close();
             } catch (SQLException e) {
-                System.out.println("[Profile]  Database error: " + e.getMessage());
+                System.out.println("[Profile] ❌ Database error: " + e.getMessage());
                 e.printStackTrace();
             }
         }
 
-        // ========== 2. LOAD AVATAR TỪ THẺ (ENCRYPTED → DECRYPTED) ==========
+        // ========== 2. LOAD AVATAR TỪ THẺ ==========
         if (mainFrame.getCardService().isPinVerified()) {
             try {
-                System.out.println("[Profile]  Loading avatar from card...");
+                System.out.println("[Profile] 📥 Loading avatar from card...");
                 
-                //  getAvatar() TỰ ĐỘNG DOWNLOAD VÀ GIẢI MÃ
                 currentAvatarData = mainFrame.getCardService().getAvatar();
                 
                 if (currentAvatarData != null && currentAvatarData.length > 0) {
-                    System.out.println("[Profile]  Received DECRYPTED avatar: " + 
+                    System.out.println("[Profile] ✅ Received DECRYPTED avatar: " + 
                         String.format("%.1f KB", currentAvatarData.length / 1024.0));
                     
-                    //  Hiển thị plaintext image
                     try {
                         ImageIcon icon = new ImageIcon(currentAvatarData);
                         Image scaled = icon.getImage().getScaledInstance(100, 100, Image.SCALE_SMOOTH);
                         lblAvatar.setIcon(new ImageIcon(scaled));
-                        lblAvatarInfo.setText(" " + String.format("%.1f KB", currentAvatarData.length / 1024.0));
+                        lblAvatarInfo.setText("✅ " + String.format("%.1f KB", currentAvatarData.length / 1024.0));
                         lblAvatarInfo.setForeground(new Color(46, 204, 113));
                     } catch (Exception e) {
-                        System.out.println("[Profile]  Cannot display avatar: " + e.getMessage());
-                        e.printStackTrace();
+                        System.out.println("[Profile] ❌ Cannot display avatar: " + e.getMessage());
                         setDefaultAvatar();
-                        lblAvatarInfo.setText(" Ảnh lỗi");
+                        lblAvatarInfo.setText("❌ Ảnh lỗi");
                         lblAvatarInfo.setForeground(new Color(231, 76, 60));
                     }
                 } else {
@@ -432,14 +417,13 @@ public class ProfileEditPanel extends JPanel {
                     lblAvatarInfo.setForeground(Color.GRAY);
                 }
             } catch (Exception e) {
-                System.out.println("[Profile]  Error loading avatar: " + e.getMessage());
-                e.printStackTrace();
+                System.out.println("[Profile] ❌ Error loading avatar: " + e.getMessage());
                 setDefaultAvatar();
                 lblAvatarInfo.setText("Lỗi tải ảnh");
                 lblAvatarInfo.setForeground(new Color(231, 76, 60));
             }
         } else {
-            System.out.println("[Profile] ️ PIN not verified, cannot load avatar");
+            System.out.println("[Profile] ⚠️ PIN not verified, cannot load avatar");
             setDefaultAvatar();
             lblAvatarInfo.setText("Chưa đăng nhập");
             lblAvatarInfo.setForeground(Color.GRAY);
@@ -447,7 +431,53 @@ public class ProfileEditPanel extends JPanel {
     }
 
     /**
-     *  LƯU THÔNG TIN - FULL ENCRYPTION
+     * ✅ MỚI: Xác thực PIN trước khi thực hiện
+     */
+    private boolean confirmPIN() {
+        // Kiểm tra có cần xác thực lại không
+        if (!mainFrame.getCardService().needsPinReconfirmation()) {
+            return true; // Chưa hết timeout, không cần nhập lại
+        }
+        
+        // Hiển thị dialog nhập PIN
+        JPasswordField pinField = new JPasswordField(6);
+        pinField.setFont(new Font("Consolas", Font.BOLD, 24));
+        pinField.setHorizontalAlignment(JTextField.CENTER);
+        
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.add(new JLabel("<html><center>🔐 Nhập mã PIN để xác thực<br><small>(Yêu cầu bảo mật)</small></center></html>"), BorderLayout.NORTH);
+        panel.add(pinField, BorderLayout.CENTER);
+        
+        int result = JOptionPane.showConfirmDialog(
+            this, 
+            panel, 
+            "Xác thực PIN", 
+            JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.PLAIN_MESSAGE
+        );
+        
+        if (result != JOptionPane.OK_OPTION) {
+            return false;
+        }
+        
+        String pin = new String(pinField.getPassword());
+        
+        if (pin.length() != 6) {
+            showError("PIN phải có 6 chữ số!");
+            return false;
+        }
+        
+        // Verify PIN
+        if (mainFrame.getCardService().reVerifyPIN(pin)) {
+            return true;
+        } else {
+            showError("PIN không đúng!");
+            return false;
+        }
+    }
+
+    /**
+     * ✅ SỬA: LƯU THÔNG TIN - MÃ HÓA RIÊNG TỪNG TRƯỜNG + XÁC THỰC PIN
      */
     private void saveProfile() {
         String name = txtName.getText().trim();
@@ -469,41 +499,57 @@ public class ProfileEditPanel extends JPanel {
             return;
         }
 
-        System.out.println("\n[Profile] ====== BẮT ĐẦU LƯU =======");
+        // ✅ MỚI: XÁC THỰC PIN TRƯỚC KHI LƯU
+        if (!confirmPIN()) {
+            return;
+        }
+
+        System.out.println("\n[Profile] ====== BẮT ĐẦU LƯU (MÃ HÓA RIÊNG TỪNG TRƯỜNG) =======");
 
         // ========== 1. UPLOAD AVATAR VÀO THẺ (NẾU CÓ) ==========
         if (newAvatarData != null && newAvatarData.length > 0) {
-            System.out.println("[Profile]  Uploading new avatar to card (" + 
+            System.out.println("[Profile] 📤 Uploading avatar (" + 
                 String.format("%.1f KB", newAvatarData.length / 1024.0) + ")...");
             
-            //  uploadAvatar() TỰ ĐỘNG MÃ HÓA VÀ UPLOAD
             if (mainFrame.getCardService().uploadAvatar(newAvatarData)) {
-                System.out.println("[Profile]  Avatar uploaded and ENCRYPTED on card");
-                currentAvatarData = newAvatarData; // Update current
+                System.out.println("[Profile] ✅ Avatar uploaded and ENCRYPTED on card");
+                currentAvatarData = newAvatarData;
             } else {
-                System.out.println("[Profile]  Avatar upload FAILED");
+                System.out.println("[Profile] ❌ Avatar upload FAILED");
                 showError("Không thể lưu ảnh vào thẻ!\nVui lòng thử lại.");
                 return;
             }
         }
 
-        // ========== 2. LƯU INFO VÀO THẺ ==========
-        String infoForCard = name;
-        byte[] nameBytes = infoForCard.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        // ========== 2. LƯU INFO VÀO THẺ - MÃ HÓA RIÊNG TỪNG TRƯỜNG ==========
+        String infoName = name;
+        byte[] nameBytes = infoName.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         if (nameBytes.length > MAX_NAME_LENGTH) {
-            infoForCard = truncateUTF8(name, MAX_NAME_LENGTH);
-            System.out.println("[Profile] Name truncated to: " + infoForCard);
+            infoName = truncateUTF8(name, MAX_NAME_LENGTH);
+            System.out.println("[Profile] Name truncated to: " + infoName);
         }
         
-        System.out.println("[Profile]  Saving info to card...");
-        //  updateInfo() → Card tự mã hóa
-        boolean cardSaved = mainFrame.getCardService().updateInfo(phone, infoForCard);
+        System.out.println("[Profile] 🔐 Saving info to card (each field encrypted separately)...");
+        System.out.println("[Profile]   → Name: " + infoName);
+        System.out.println("[Profile]   → Phone: " + phone);
+        System.out.println("[Profile]   → Email: " + (email.isEmpty() ? "(empty)" : email));
+        System.out.println("[Profile]   → BirthDate: " + (birthDate.isEmpty() ? "(empty)" : birthDate));
+        System.out.println("[Profile]   → Address: " + (address.isEmpty() ? "(empty)" : address));
+        
+        // ✅ MỚI: Gọi updateInfoFields() để mã hóa riêng từng trường
+        boolean cardSaved = mainFrame.getCardService().updateInfoFields(
+            infoName, 
+            phone, 
+            email.isEmpty() ? null : email, 
+            birthDate.isEmpty() ? null : birthDate, 
+            address.isEmpty() ? null : address
+        );
         
         if (!cardSaved) {
             showError("Lưu thông tin vào thẻ thất bại!");
             return;
         }
-        System.out.println("[Profile]  Info saved and ENCRYPTED on card");
+        System.out.println("[Profile] ✅ All fields saved and ENCRYPTED separately on card");
 
         // ========== 3. LƯU VÀO DATABASE (MÃ HÓA) ==========
         String cardId = mainFrame.getCurrentCardId();
@@ -511,9 +557,9 @@ public class ProfileEditPanel extends JPanel {
         
         if (conn != null) {
             try {
-                System.out.println("[Profile]  Saving to database (encrypted)...");
+                System.out.println("[Profile] 💾 Saving to database (encrypted)...");
                 
-                //  MÃ HÓA dữ liệu trước khi lưu
+                // MÃ HÓA dữ liệu trước khi lưu
                 String nameEnc = SecurityUtils.encrypt(name);
                 String phoneEnc = SecurityUtils.encrypt(phone);
                 String phoneHash = SecurityUtils.hashPhone(phone);
@@ -541,7 +587,7 @@ public class ProfileEditPanel extends JPanel {
                     ps.setString(5, cardId);
                     ps.executeUpdate();
                     ps.close();
-                    System.out.println("[Profile]  Database UPDATED (encrypted)");
+                    System.out.println("[Profile] ✅ Database UPDATED (encrypted)");
                 } else {
                     // INSERT
                     String sql = "INSERT INTO members (card_id, name_enc, phone_enc, phone_hash, " +
@@ -554,11 +600,11 @@ public class ProfileEditPanel extends JPanel {
                     ps.setString(5, birthEnc);
                     ps.executeUpdate();
                     ps.close();
-                    System.out.println("[Profile]  Database INSERTED (encrypted)");
+                    System.out.println("[Profile] ✅ Database INSERTED (encrypted)");
                 }
                 
             } catch (SQLException e) {
-                System.out.println("[Profile]  Database error: " + e.getMessage());
+                System.out.println("[Profile] ❌ Database error: " + e.getMessage());
                 e.printStackTrace();
                 showError("Lỗi lưu database: " + e.getMessage());
                 return;
@@ -575,11 +621,11 @@ public class ProfileEditPanel extends JPanel {
 
         JOptionPane.showMessageDialog(this,
             "<html><center>" +
-            "<h2> LƯU THÀNH CÔNG!</h2>" +
-            "<p> Thẻ: Info encrypted (AES)</p>" +
-            (newAvatarData != null ? "<p> Thẻ: Avatar encrypted (AES PC-side)</p>" : "") +
-            "<p> Database: Encrypted (AES)</p>" +
-            "<br><p style='color:#f1c40f'>SĐT <b>" + phone + "</b> dùng để mở khóa thẻ</p>" +
+            "<h2>✅ LƯU THÀNH CÔNG!</h2>" +
+            "<p>🔐 Thẻ: Mỗi trường mã hóa riêng (AES)</p>" +
+            (newAvatarData != null ? "<p>🖼️ Avatar: " + AVATAR_SIZE + "x" + AVATAR_SIZE + " encrypted</p>" : "") +
+            "<p>💾 Database: Encrypted (AES)</p>" +
+            "<br><p style='color:#f1c40f'>📱 SĐT <b>" + phone + "</b> dùng để mở khóa thẻ</p>" +
             "</center></html>",
             "Thành công",
             JOptionPane.INFORMATION_MESSAGE
@@ -589,7 +635,7 @@ public class ProfileEditPanel extends JPanel {
     }
 
     /**
-     *  Cắt chuỗi UTF-8 đúng cách
+     * Cắt chuỗi UTF-8 đúng cách
      */
     private String truncateUTF8(String str, int maxBytes) {
         if (str == null) return "";
@@ -610,7 +656,7 @@ public class ProfileEditPanel extends JPanel {
     }
 
     /**
-     *  Được gọi khi panel hiển thị
+     * Được gọi khi panel hiển thị
      */
     public void onShow() {
         loadCurrentData();

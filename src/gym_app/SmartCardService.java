@@ -16,13 +16,9 @@ import java.util.*;
 /**
  * SmartCardService - RSA KEM với Master Key do Card tự sinh
  *
- * ✅ GIAI ĐOẠN 1: Card sinh RSA KeyPair, App lấy Public Key ✅ GIAI ĐOẠN 2: PIN
- * được RSA encrypt → Card verify → Card tự hash PIN → Master Key ✅ GIAI ĐOẠN 3:
- * UPDATE - App gửi [RSA(SessionKey)] + [AES_Session(Data)] → Card lưu
- * [AES_Master(Data)] ✅ GIAI ĐOẠN 4: GET - Card đọc [AES_Master(Data)] → trả về
- * [AES_Session(Data)]
- *
- * 🔒 PC KHÔNG BAO GIỜ BIẾT MASTER KEY!
+ * ✅ v2.1 - CẬP NHẬT: - Mã hóa riêng từng trường thông tin (name, phone, email,
+ * birthDate, address) - Thêm xác thực PIN trước mỗi thao tác quan trọng -
+ * Avatar chuẩn hóa 48x48
  */
 public class SmartCardService {
 
@@ -41,6 +37,9 @@ public class SmartCardService {
     private static final int SESSION_KEY_SIZE = 16; // AES-128
     private static final int IV_SIZE = 16;
 
+    // ✅ MỚI: Chuẩn hóa avatar
+    public static final int AVATAR_STANDARD_SIZE = 48; // 48x48 pixels
+
     // ====================== APDU COMMANDS ======================
     private static final byte CLA = (byte) 0x80;
 
@@ -48,8 +47,8 @@ public class SmartCardService {
     private static final byte INS_VERIFY_PIN = (byte) 0x10;
     private static final byte INS_CHANGE_PIN = (byte) 0x11;
     private static final byte INS_UNBLOCK_PIN = (byte) 0x12;
-    private static final byte INS_VERIFY_PIN_SECURE = (byte) 0x13;   // ✅ MỚI
-    private static final byte INS_CHANGE_PIN_SECURE = (byte) 0x14;   // ✅ MỚI
+    private static final byte INS_VERIFY_PIN_SECURE = (byte) 0x13;
+    private static final byte INS_CHANGE_PIN_SECURE = (byte) 0x14;
 
     // Data Operations (RSA KEM)
     private static final byte INS_UPDATE_INFO_ENCAPS = (byte) 0x24;
@@ -66,6 +65,7 @@ public class SmartCardService {
     // Crypto Setup
     private static final byte INS_INIT_CRYPTO = (byte) 0x50;
     private static final byte INS_GET_STATUS = (byte) 0x51;
+    private static final byte INS_SET_SESSION_KEY = (byte) 0x52;
     private static final byte INS_GEN_RSA_KEYPAIR = (byte) 0x60;
     private static final byte INS_GET_RSA_PUBLIC = (byte) 0x61;
 
@@ -73,7 +73,6 @@ public class SmartCardService {
     private static final byte INS_HASH_DATA = (byte) 0x81;
 
     // ====================== CRYPTO - PC SIDE ======================
-    // ✅ BỎ: masterAesKey, masterIvSpec - PC không biết Master Key
     private Cipher aesCipher;
     private Cipher rsaCipher;
     private SecureRandom secureRandom;
@@ -101,19 +100,30 @@ public class SmartCardService {
     private boolean isCardBlocked = false;
     private boolean rsaKeysGenerated = false;
 
+    // ✅ MỚI: Thời gian xác thực PIN gần nhất (để yêu cầu xác thực lại)
+    private long lastPinVerifyTime = 0;
+    private static final long PIN_RECONFIRM_TIMEOUT = 0;
+
     // Cache (chỉ để hiển thị, không dùng để mã hóa)
     private String savedInfo = null;
     private byte[] savedAvatar = null;
     private long savedBalance = 0;
 
+    // ✅ MỚI: Cache từng trường riêng biệt
+    private String cachedName = null;
+    private String cachedPhone = null;
+    private String cachedEmail = null;
+    private String cachedBirthDate = null;
+    private String cachedAddress = null;
+
     // ====================== CONSTRUCTOR ======================
     public SmartCardService() {
         System.out.println("╔════════════════════════════════════════════════════════════╗");
-        System.out.println("║  SMARTCARD SERVICE v2.0 - MASTER KEY DO CARD TỰ SINH       ║");
+        System.out.println("║  SMARTCARD SERVICE v2.1 - MÃ HÓA TỪNG TRƯỜNG RIÊNG         ║");
         System.out.println("║  ✅ PIN: RSA encrypted trên đường truyền                   ║");
         System.out.println("║  ✅ Master Key: Card hash PIN nội bộ (PC không biết!)      ║");
-        System.out.println("║  ✅ Session Key: RSA encrypted cho mỗi transaction         ║");
-        System.out.println("║  ✅ Data: Session Key (truyền) + Master Key (lưu trữ)      ║");
+        System.out.println("║  ✅ Mỗi trường (name, phone, ...) mã hóa riêng biệt        ║");
+        System.out.println("║  ✅ Xác thực PIN trước mỗi thao tác quan trọng             ║");
         System.out.println("╚════════════════════════════════════════════════════════════╝");
 
         try {
@@ -127,7 +137,7 @@ public class SmartCardService {
     }
 
     /**
-     * Khởi tạo crypto objects ở PC-side ✅ KHÔNG CÒN Master Key ở đây
+     * Khởi tạo crypto objects ở PC-side
      */
     private void initCrypto() {
         try {
@@ -160,6 +170,14 @@ public class SmartCardService {
         savedInfo = null;
         savedAvatar = null;
         savedBalance = 0;
+        lastPinVerifyTime = 0;
+
+        // Reset cache
+        cachedName = null;
+        cachedPhone = null;
+        cachedEmail = null;
+        cachedBirthDate = null;
+        cachedAddress = null;
 
         initSimulator();
 
@@ -192,7 +210,7 @@ public class SmartCardService {
                     System.out.println("[JCSIM] ✅ Card crypto initialized");
                 }
 
-                // ✅ GIAI ĐOẠN 1: Sinh RSA Key Pair ngay từ đầu
+                // Sinh RSA Key Pair ngay từ đầu
                 System.out.println("[JCSIM] 🔑 Generating RSA key pair...");
                 apdu = new CommandAPDU(CLA, INS_GEN_RSA_KEYPAIR, 0x00, 0x00, 1);
                 resp = sendAPDU(apdu);
@@ -232,9 +250,6 @@ public class SmartCardService {
     }
 
     // ====================== RSA KEY MANAGEMENT ======================
-    /**
-     * Load RSA Public Key từ Card
-     */
     private boolean loadCardRSAPublicKey() {
         try {
             System.out.println("[RSA] 📥 Loading RSA public key from card...");
@@ -294,20 +309,16 @@ public class SmartCardService {
 
     /**
      * RSA Encrypt Session Key + IV để gửi cho Card
-     *
-     * @return 128 bytes RSA encrypted (Session Key + IV)
      */
     private byte[] encapsulateSessionKey() throws Exception {
         if (!cardRsaKeyLoaded) {
             throw new Exception("Card RSA public key not loaded");
         }
 
-        // Ghép Session Key (16 bytes) + IV (16 bytes) = 32 bytes
         byte[] keyMaterial = new byte[SESSION_KEY_SIZE + IV_SIZE];
         System.arraycopy(currentSessionKey, 0, keyMaterial, 0, SESSION_KEY_SIZE);
         System.arraycopy(currentSessionIv, 0, keyMaterial, SESSION_KEY_SIZE, IV_SIZE);
 
-        // RSA Encrypt với Card's Public Key
         rsaCipher.init(Cipher.ENCRYPT_MODE, cardRsaPublicKey);
         byte[] encrypted = rsaCipher.doFinal(keyMaterial);
 
@@ -318,8 +329,6 @@ public class SmartCardService {
 
     /**
      * RSA Encrypt PIN để gửi cho Card
-     *
-     * @return 128 bytes RSA encrypted PIN
      */
     private byte[] encryptPIN(String pin) throws Exception {
         if (!cardRsaKeyLoaded) {
@@ -358,14 +367,50 @@ public class SmartCardService {
         return aesCipher.doFinal(ciphertext);
     }
 
-    // ====================== ✅ PIN OPERATIONS - CẬP NHẬT ======================
+    // ====================== ✅ MỚI: XÁC THỰC PIN ======================
     /**
-     * ✅ GIAI ĐOẠN 2: Verify PIN với RSA encryption
+     * ✅ MỚI: Kiểm tra xem có cần xác thực lại PIN không
      *
-     * Flow: 1. PC encrypt PIN bằng RSA Public Key của Card 2. Card decrypt bằng
-     * RSA Private Key → lấy PIN 3. Card verify PIN 4. Card hash PIN → sinh
-     * Master Key (PC không biết!)
+     * @return true nếu cần xác thực lại
      */
+    public boolean needsPinReconfirmation() {
+        if (!pinVerified) {
+            return true;
+        }
+
+        long elapsed = System.currentTimeMillis() - lastPinVerifyTime;
+        return elapsed > PIN_RECONFIRM_TIMEOUT;
+    }
+
+    /**
+     * ✅ MỚI: Xác thực lại PIN (không thay đổi session, chỉ verify) Dùng cho các
+     * thao tác quan trọng như nạp tiền, thanh toán
+     */
+    public boolean reVerifyPIN(String pin) {
+        if (pin == null || pin.length() != PIN_SIZE) {
+            return false;
+        }
+
+        if (!pin.equals(currentPIN)) {
+            System.out.println("[PIN] ❌ PIN không khớp!");
+            return false;
+        }
+
+        // Cập nhật thời gian xác thực
+        lastPinVerifyTime = System.currentTimeMillis();
+        System.out.println("[PIN] ✅ PIN re-verified successfully");
+        return true;
+    }
+
+    /**
+     * ✅ MỚI: Lấy PIN hiện tại (để so sánh khi xác thực lại) CHÚ Ý: Chỉ dùng nội
+     * bộ, KHÔNG expose ra ngoài!
+     */
+    public String getCurrentPIN() {
+        return currentPIN;
+    }
+
+    // ====================== PIN OPERATIONS ======================
     public boolean verifyPIN(String pin6) {
         if (pin6 == null || pin6.length() != PIN_SIZE) {
             return false;
@@ -384,10 +429,8 @@ public class SmartCardService {
                 return verifyPINLegacy(pin6);
             }
 
-            // ✅ Encrypt PIN bằng RSA
             byte[] encryptedPIN = encryptPIN(pin6);
 
-            // Gửi INS_VERIFY_PIN_SECURE
             CommandAPDU apdu = new CommandAPDU(CLA, INS_VERIFY_PIN_SECURE, 0x00, 0x00, encryptedPIN);
             ResponseAPDU resp = sendAPDU(apdu);
 
@@ -395,6 +438,7 @@ public class SmartCardService {
                 pinVerified = true;
                 pinTriesRemaining = PIN_TRY_LIMIT;
                 currentPIN = pin6;
+                lastPinVerifyTime = System.currentTimeMillis(); // ✅ Cập nhật thời gian
 
                 System.out.println("[PIN] ✅ PIN verified! Master Key đã được Card tự sinh.");
                 System.out.println("[PIN] ═══════════════════════════════════════════════\n");
@@ -421,9 +465,6 @@ public class SmartCardService {
         return false;
     }
 
-    /**
-     * Legacy verify PIN (không RSA encrypt) - fallback
-     */
     private boolean verifyPINLegacy(String pin6) {
         byte[] pinBytes = pin6.getBytes();
         CommandAPDU apdu = new CommandAPDU(CLA, INS_VERIFY_PIN, 0x00, 0x00, pinBytes);
@@ -433,6 +474,7 @@ public class SmartCardService {
             pinVerified = true;
             pinTriesRemaining = PIN_TRY_LIMIT;
             currentPIN = pin6;
+            lastPinVerifyTime = System.currentTimeMillis();
             System.out.println("[PIN] ✅ PIN verified (legacy)!");
             return true;
         } else if (resp != null && (resp.getSW() & 0xFFF0) == 0x63C0) {
@@ -445,9 +487,6 @@ public class SmartCardService {
         return false;
     }
 
-    /**
-     * ✅ Change PIN với RSA encryption
-     */
     public boolean changePIN(String oldPin, String newPin) {
         if (oldPin == null || oldPin.length() != PIN_SIZE
                 || newPin == null || newPin.length() != PIN_SIZE) {
@@ -463,16 +502,13 @@ public class SmartCardService {
                 return changePINLegacy(oldPin, newPin);
             }
 
-            // Ghép oldPIN + newPIN
             byte[] bothPins = new byte[PIN_SIZE * 2];
             System.arraycopy(oldPin.getBytes("UTF-8"), 0, bothPins, 0, PIN_SIZE);
             System.arraycopy(newPin.getBytes("UTF-8"), 0, bothPins, PIN_SIZE, PIN_SIZE);
 
-            // RSA Encrypt
             rsaCipher.init(Cipher.ENCRYPT_MODE, cardRsaPublicKey);
             byte[] encryptedPins = rsaCipher.doFinal(bothPins);
 
-            // Gửi INS_CHANGE_PIN_SECURE
             CommandAPDU apdu = new CommandAPDU(CLA, INS_CHANGE_PIN_SECURE, 0x00, 0x00, encryptedPins);
             ResponseAPDU resp = sendAPDU(apdu);
 
@@ -483,7 +519,6 @@ public class SmartCardService {
                 System.out.println("[PIN] ✅ PIN changed! Master Key đã được cập nhật.");
                 System.out.println("[PIN] ═══════════════════════════════════════════════\n");
 
-                // Re-verify với PIN mới
                 pinVerified = false;
                 return verifyPIN(newPin);
 
@@ -500,9 +535,6 @@ public class SmartCardService {
         return false;
     }
 
-    /**
-     * Legacy change PIN - fallback
-     */
     private boolean changePINLegacy(String oldPin, String newPin) {
         byte[] data = new byte[12];
         System.arraycopy(oldPin.getBytes(), 0, data, 0, 6);
@@ -522,9 +554,6 @@ public class SmartCardService {
         return false;
     }
 
-    /**
-     * Unblock Card bằng số điện thoại
-     */
     public boolean unblockCard(String phone) {
         if (phone == null || phone.isEmpty()) {
             return false;
@@ -545,6 +574,7 @@ public class SmartCardService {
             isFirstLogin = true;
             currentPIN = "123456";
             pinVerified = false;
+            lastPinVerifyTime = 0;
 
             System.out.println("[JCSIM] ✅ Card unblocked! PIN reset về 123456");
             return true;
@@ -553,91 +583,161 @@ public class SmartCardService {
         return false;
     }
 
-    // ====================== ✅ INFO OPERATIONS - RSA KEM ======================
+    // ====================== ✅ MỚI: INFO OPERATIONS - MÃ HÓA RIÊNG TỪNG TRƯỜNG ======================
     /**
-     * ✅ GIAI ĐOẠN 3: UPDATE INFO
+     * ✅ MỚI: Cập nhật thông tin với mã hóa riêng từng trường Mỗi trường được mã
+     * hóa độc lập trước khi gửi lên Card
      *
-     * Flow: 1. PC sinh Session Key + IV 2. PC RSA encrypt Session Key+IV bằng
-     * Card's Public Key 3. PC AES encrypt payload bằng Session Key 4. Gửi
-     * [RSA(SessionKey+IV)] + [AES_Session(Payload)] 5. Card RSA decrypt → lấy
-     * Session Key 6. Card AES decrypt với Session Key → plaintext 7. Card AES
-     * encrypt với Master Key → lưu EEPROM
+     * Format gửi lên Card:
+     * [FIELD_COUNT][FIELD1_TYPE][FIELD1_LEN][FIELD1_ENCRYPTED_DATA]...
+     *
+     * @param name Họ tên (max 40 chars)
+     * @param phone Số điện thoại (10-11 số)
+     * @param email Email (có thể null)
+     * @param birthDate Ngày sinh dd/MM/yyyy (có thể null)
+     * @param address Địa chỉ (có thể null)
+     * @return true nếu thành công
      */
-    public boolean updateInfo(String phone, String info) {
+    public boolean updateInfoFields(String name, String phone, String email, String birthDate, String address) {
         if (!pinVerified) {
-            System.out.println("[INFO] ❌ PIN not verified");
             return false;
         }
-
         if (!cardRsaKeyLoaded) {
-            System.out.println("[INFO] ❌ RSA not ready");
             return false;
         }
 
         try {
             System.out.println("\n[INFO] ═══════════════════════════════════════════════");
-            System.out.println("[INFO] 📤 UPDATE INFO với RSA KEM + Master Key");
+            System.out.println("[INFO] 📤 UPDATE INFO - CHIA 2 GÓI TIN (HANDSHAKE + DATA)");
 
-            // Chuẩn bị payload plaintext
-            byte[] phoneBytes = (phone != null) ? phone.getBytes("UTF-8") : new byte[0];
-            byte[] infoBytes = (info != null) ? info.getBytes("UTF-8") : new byte[0];
-
-            if (phoneBytes.length > 12) {
-                phoneBytes = Arrays.copyOf(phoneBytes, 12);
-            }
-            if (infoBytes.length > INFO_MAX_SIZE) {
-                infoBytes = Arrays.copyOf(infoBytes, INFO_MAX_SIZE);
-            }
-
-            // Format: [SDT_LEN][SDT...][INFO...]
-            ByteArrayOutputStream payloadBaos = new ByteArrayOutputStream();
-            payloadBaos.write((byte) phoneBytes.length);
-            payloadBaos.write(phoneBytes);
-            payloadBaos.write(infoBytes);
-            byte[] plaintextPayload = payloadBaos.toByteArray();
-
-            // Sinh Session Key + Encapsulate
+            // 1. Sinh Session Key và Encapsulate (RSA)
             generateSessionKey();
             byte[] encapsulatedKey = encapsulateSessionKey();
-            byte[] encryptedPayload = encryptWithSessionKey(plaintextPayload);
 
-            // Ghép gói APDU
-            byte[] apduData = new byte[encapsulatedKey.length + encryptedPayload.length];
-            System.arraycopy(encapsulatedKey, 0, apduData, 0, encapsulatedKey.length);
-            System.arraycopy(encryptedPayload, 0, apduData, encapsulatedKey.length, encryptedPayload.length);
+            // 2. Gửi Lệnh 1: Handshake (Gửi Key RSA)
+            System.out.println("[INFO] 1️⃣ Sending Session Key (" + encapsulatedKey.length + " bytes)...");
+            CommandAPDU apduKey = new CommandAPDU(CLA, INS_SET_SESSION_KEY, 0x00, 0x00, encapsulatedKey);
+            ResponseAPDU respKey = sendAPDU(apduKey);
 
-            System.out.println("[INFO] Total APDU data: " + apduData.length + " bytes");
-            System.out.println("[INFO] → Card sẽ lưu encrypted bằng Master Key (PC không biết!)");
-
-            // Gửi APDU
-            CommandAPDU apdu = new CommandAPDU(CLA, INS_UPDATE_INFO_ENCAPS, 0x00, 0x00, apduData);
-            ResponseAPDU resp = sendAPDU(apdu);
-
-            if (resp != null && resp.getSW() == 0x9000) {
-                this.recoveryPhone = phone;
-                this.savedInfo = info;
-                System.out.println("[INFO] ✅ Info saved (Master Key encrypted on Card)!");
-                System.out.println("[INFO] ═══════════════════════════════════════════════\n");
-                return true;
+            if (respKey == null || respKey.getSW() != 0x9000) {
+                System.out.println("[INFO] ❌ Handshake failed: SW=" + String.format("%04X", respKey != null ? respKey.getSW() : 0));
+                return false;
             }
 
-            System.out.println("[INFO] ❌ Failed: SW=" + String.format("%04X", resp != null ? resp.getSW() : 0));
+            // 3. Chuẩn bị dữ liệu Payload (Plaintext)
+            ByteArrayOutputStream payloadBaos = new ByteArrayOutputStream();
+            ByteArrayOutputStream fieldsData = new ByteArrayOutputStream();
+            int fieldCount = 0;
+
+            // --- Helper đóng gói trường ---
+            if (name != null && !name.isEmpty()) {
+                byte[] enc = encryptFieldWithSessionKey(name, (byte) 0x01);
+                fieldsData.write(0x01);
+                fieldsData.write((enc.length >> 8) & 0xFF);
+                fieldsData.write(enc.length & 0xFF);
+                fieldsData.write(enc);
+                fieldCount++;
+            }
+            if (phone != null && !phone.isEmpty()) {
+                byte[] enc = encryptFieldWithSessionKey(phone, (byte) 0x02);
+                fieldsData.write(0x02);
+                fieldsData.write((enc.length >> 8) & 0xFF);
+                fieldsData.write(enc.length & 0xFF);
+                fieldsData.write(enc);
+                fieldCount++;
+            }
+            if (email != null && !email.isEmpty()) {
+                byte[] enc = encryptFieldWithSessionKey(email, (byte) 0x03);
+                fieldsData.write(0x03);
+                fieldsData.write((enc.length >> 8) & 0xFF);
+                fieldsData.write(enc.length & 0xFF);
+                fieldsData.write(enc);
+                fieldCount++;
+            }
+            if (birthDate != null && !birthDate.isEmpty()) {
+                byte[] enc = encryptFieldWithSessionKey(birthDate, (byte) 0x04);
+                fieldsData.write(0x04);
+                fieldsData.write((enc.length >> 8) & 0xFF);
+                fieldsData.write(enc.length & 0xFF);
+                fieldsData.write(enc);
+                fieldCount++;
+            }
+            if (address != null && !address.isEmpty()) {
+                byte[] enc = encryptFieldWithSessionKey(address, (byte) 0x05);
+                fieldsData.write(0x05);
+                fieldsData.write((enc.length >> 8) & 0xFF);
+                fieldsData.write(enc.length & 0xFF);
+                fieldsData.write(enc);
+                fieldCount++;
+            }
+
+            payloadBaos.write((byte) fieldCount);
+            payloadBaos.write(fieldsData.toByteArray());
+            byte[] payload = payloadBaos.toByteArray();
+
+            // 4. Encrypt Payload bằng AES Session Key
+            byte[] encryptedPayload = encryptWithSessionKey(payload);
+
+            System.out.println("[INFO] 2️⃣ Sending Data Payload (" + encryptedPayload.length + " bytes)...");
+
+            // 5. Gửi Lệnh 2: Data (AES Only)
+            CommandAPDU apduData = new CommandAPDU(CLA, INS_UPDATE_INFO_ENCAPS, 0x00, 0x00, encryptedPayload);
+            ResponseAPDU respData = sendAPDU(apduData);
+
+            if (respData != null && respData.getSW() == 0x9000) {
+                // Cập nhật Cache
+                this.recoveryPhone = phone;
+                this.cachedName = name;
+                this.cachedPhone = phone;
+                this.cachedEmail = email;
+                this.cachedBirthDate = birthDate;
+                this.cachedAddress = address;
+                this.savedInfo = name;
+
+                System.out.println("[INFO] ✅ All fields saved successfully via Split APDU!");
+                System.out.println("[INFO] ═══════════════════════════════════════════════\n");
+                return true;
+            } else {
+                System.out.println("[INFO] ❌ Data send failed: SW=" + String.format("%04X", respData != null ? respData.getSW() : 0));
+            }
 
         } catch (Exception e) {
-            System.out.println("[INFO] ❌ Error: " + e.getMessage());
             e.printStackTrace();
         }
-
         return false;
     }
 
     /**
-     * ✅ GIAI ĐOẠN 4: GET INFO
-     *
-     * Flow: 1. PC sinh Session Key + IV 2. PC RSA encrypt Session Key+IV 3. Gửi
-     * [RSA(SessionKey+IV)] 4. Card RSA decrypt → lấy Session Key 5. Card AES
-     * decrypt từ EEPROM với Master Key → plaintext 6. Card AES encrypt với
-     * Session Key → trả về 7. PC AES decrypt với Session Key → hiển thị
+     * ✅ MỚI: Mã hóa một trường riêng biệt Thêm type byte vào đầu để Card biết
+     * đây là trường gì
+     */
+    private byte[] encryptFieldWithSessionKey(String value, byte fieldType) throws Exception {
+        byte[] valueBytes = value.getBytes("UTF-8");
+
+        // Format: [TYPE][VALUE...]
+        byte[] plaintext = new byte[1 + valueBytes.length];
+        plaintext[0] = fieldType;
+        System.arraycopy(valueBytes, 0, plaintext, 1, valueBytes.length);
+
+        // Encrypt với Session Key
+        SecretKeySpec sessionKeySpec = new SecretKeySpec(currentSessionKey, "AES");
+        IvParameterSpec sessionIvSpec = new IvParameterSpec(currentSessionIv);
+
+        aesCipher.init(Cipher.ENCRYPT_MODE, sessionKeySpec, sessionIvSpec);
+        return aesCipher.doFinal(plaintext);
+    }
+
+    /**
+     * ✅ Giữ nguyên updateInfo() để tương thích ngược Nhưng nội bộ gọi
+     * updateInfoFields()
+     */
+    public boolean updateInfo(String phone, String info) {
+        // Tương thích ngược: info = name
+        return updateInfoFields(info, phone, null, null, null);
+    }
+
+    /**
+     * GET INFO - Giữ nguyên logic cũ
      */
     public String getInfo() {
         if (!pinVerified) {
@@ -654,11 +754,9 @@ public class SmartCardService {
             System.out.println("\n[INFO] ═══════════════════════════════════════════════");
             System.out.println("[INFO] 📥 GET INFO với RSA KEM + Master Key");
 
-            // Sinh Session Key + Encapsulate
             generateSessionKey();
             byte[] encapsulatedKey = encapsulateSessionKey();
 
-            // Gửi APDU
             CommandAPDU apdu = new CommandAPDU(CLA, INS_GET_INFO_ENCAPS, 0x00, 0x00, encapsulatedKey);
             ResponseAPDU resp = sendAPDU(apdu);
 
@@ -666,10 +764,8 @@ public class SmartCardService {
                 byte[] encryptedData = resp.getData();
 
                 if (encryptedData.length > 0 && encryptedData.length % AES_BLOCK_SIZE == 0) {
-                    // Decrypt với Session Key
                     byte[] plaintext = decryptWithSessionKey(encryptedData);
 
-                    // Xóa padding
                     int decLen = plaintext.length;
                     byte padValue = plaintext[decLen - 1];
                     if (padValue > 0 && padValue <= AES_BLOCK_SIZE) {
@@ -694,10 +790,7 @@ public class SmartCardService {
         return savedInfo;
     }
 
-    // ====================== ✅ AVATAR OPERATIONS - RSA KEM ======================
-    /**
-     * ✅ UPLOAD AVATAR với RSA KEM + Master Key
-     */
+    // ====================== AVATAR OPERATIONS ======================
     public boolean uploadAvatar(byte[] avatarData) {
         if (!pinVerified) {
             System.out.println("[AVATAR] ❌ PIN not verified");
@@ -714,24 +807,20 @@ public class SmartCardService {
             System.out.println("[AVATAR] 📤 UPLOAD AVATAR với RSA KEM + Master Key");
             System.out.println("[AVATAR] Original size: " + avatarData.length + " bytes");
 
-            // Sinh Session Key
             generateSessionKey();
             byte[] encapsulatedKey = encapsulateSessionKey();
 
-            // Encrypt toàn bộ avatar với Session Key (có padding)
             byte[] encryptedAvatar = encryptWithSessionKey(avatarData);
 
             System.out.println("[AVATAR] Encrypted size: " + encryptedAvatar.length + " bytes");
 
-            // Upload theo chunks
             int offset = 0;
-            int maxPayloadPerChunk = 96; // 96 bytes để an toàn
+            int maxPayloadPerChunk = 96;
 
             while (offset < encryptedAvatar.length) {
                 int remaining = encryptedAvatar.length - offset;
                 int chunkSize = Math.min(maxPayloadPerChunk, remaining);
 
-                // Đảm bảo chunk size là bội số của 16
                 if (remaining > maxPayloadPerChunk && chunkSize % AES_BLOCK_SIZE != 0) {
                     chunkSize = (chunkSize / AES_BLOCK_SIZE) * AES_BLOCK_SIZE;
                 }
@@ -742,23 +831,20 @@ public class SmartCardService {
                 byte p1, p2;
 
                 if (offset == 0) {
-                    // Chunk đầu tiên: có RSA encapsulated key
                     chunkData = new byte[encapsulatedKey.length + chunkSize];
                     System.arraycopy(encapsulatedKey, 0, chunkData, 0, encapsulatedKey.length);
                     System.arraycopy(encryptedAvatar, offset, chunkData, encapsulatedKey.length, chunkSize);
                     p1 = 0;
                     p2 = 0;
                 } else {
-                    // Các chunk tiếp theo
                     chunkData = new byte[chunkSize];
                     System.arraycopy(encryptedAvatar, offset, chunkData, 0, chunkSize);
                     p1 = (byte) ((offset >> 8) & 0x7F);
                     p2 = (byte) (offset & 0xFF);
                 }
 
-                // Đánh dấu chunk cuối
                 if (isLastChunk) {
-                    p1 = (byte) (p1 | 0x80);  // Set bit 7
+                    p1 = (byte) (p1 | 0x80);
                 }
 
                 CommandAPDU apdu = new CommandAPDU(CLA, INS_UPLOAD_AVATAR_ENCAPS, p1, p2, chunkData);
@@ -769,7 +855,6 @@ public class SmartCardService {
                     return false;
                 }
 
-                // Chunk cuối trả về size
                 if (isLastChunk && resp.getSW() == 0x9000 && resp.getData().length == 2) {
                     int storedSize = ((resp.getData()[0] & 0xFF) << 8) | (resp.getData()[1] & 0xFF);
                     System.out.println("[AVATAR] ✓ Card stored: " + storedSize + " bytes (plaintext)");
@@ -793,9 +878,6 @@ public class SmartCardService {
         }
     }
 
-    /**
-     * ✅ GET AVATAR với RSA KEM + Master Key
-     */
     public byte[] getAvatar() {
         if (!pinVerified) {
             System.out.println("[AVATAR] ⚠️ PIN not verified, returning cached");
@@ -811,11 +893,9 @@ public class SmartCardService {
             System.out.println("\n[AVATAR] ═══════════════════════════════════════════════");
             System.out.println("[AVATAR] 📥 GET AVATAR với RSA KEM + Master Key");
 
-            // Sinh Session Key
             generateSessionKey();
             byte[] encapsulatedKey = encapsulateSessionKey();
 
-            // Bước 1: Gửi Session Key, nhận plaintext size
             CommandAPDU apdu = new CommandAPDU(CLA, INS_GET_AVATAR_ENCAPS, 0x00, 0x00, encapsulatedKey);
             ResponseAPDU resp = sendAPDU(apdu);
 
@@ -838,7 +918,6 @@ public class SmartCardService {
 
             System.out.println("[AVATAR] Plaintext size: " + plaintextSize + " bytes");
 
-            // Bước 2: Download từng chunk
             ByteArrayOutputStream baos = new ByteArrayOutputStream();
             int offset = 0;
 
@@ -846,7 +925,6 @@ public class SmartCardService {
                 byte p1 = (byte) ((offset >> 8) & 0xFF);
                 byte p2 = (byte) (offset & 0xFF);
 
-                // Gửi request (không cần data)
                 apdu = new CommandAPDU(CLA, INS_GET_AVATAR_ENCAPS, p1, p2, new byte[0], 256);
                 resp = sendAPDU(apdu);
 
@@ -860,21 +938,16 @@ public class SmartCardService {
                     break;
                 }
 
-                // Decrypt chunk với Session Key
                 byte[] decryptedChunk = decryptWithSessionKey(encryptedChunk);
 
-                // Xóa padding (chỉ chunk cuối có padding thực, các chunk khác padding = block size)
                 int chunkPlainLen = decryptedChunk.length;
                 int remainingToRead = plaintextSize - offset;
 
                 if (remainingToRead < chunkPlainLen) {
-                    // Chunk cuối - có padding
                     chunkPlainLen = remainingToRead;
                 } else {
-                    // Không phải chunk cuối - xóa padding nếu có
                     byte padValue = decryptedChunk[chunkPlainLen - 1];
                     if (padValue > 0 && padValue <= AES_BLOCK_SIZE && chunkPlainLen - padValue >= remainingToRead - 100) {
-                        // Có thể là padding, kiểm tra
                         boolean validPad = true;
                         for (int i = chunkPlainLen - padValue; i < chunkPlainLen; i++) {
                             if (decryptedChunk[i] != padValue) {
@@ -888,7 +961,6 @@ public class SmartCardService {
                     }
                 }
 
-                // Chỉ lấy đúng số bytes cần thiết
                 if (offset + chunkPlainLen > plaintextSize) {
                     chunkPlainLen = plaintextSize - offset;
                 }
@@ -901,7 +973,6 @@ public class SmartCardService {
 
                 offset += chunkPlainLen;
 
-                // Kiểm tra đã đủ chưa
                 if (offset >= plaintextSize) {
                     break;
                 }
@@ -909,7 +980,6 @@ public class SmartCardService {
 
             byte[] result = baos.toByteArray();
 
-            // Cắt đúng size nếu cần
             if (result.length > plaintextSize) {
                 result = Arrays.copyOf(result, plaintextSize);
             }
@@ -929,7 +999,7 @@ public class SmartCardService {
         return savedAvatar;
     }
 
-    // ====================== BALANCE OPERATIONS (không mã hóa) ======================
+    // ====================== BALANCE OPERATIONS ======================
     public long getBalance() {
         if (!pinVerified) {
             return savedBalance;
@@ -1063,6 +1133,27 @@ public class SmartCardService {
         return cardRsaKeyLoaded;
     }
 
+    // ✅ MỚI: Getters cho cached fields
+    public String getCachedName() {
+        return cachedName;
+    }
+
+    public String getCachedPhone() {
+        return cachedPhone;
+    }
+
+    public String getCachedEmail() {
+        return cachedEmail;
+    }
+
+    public String getCachedBirthDate() {
+        return cachedBirthDate;
+    }
+
+    public String getCachedAddress() {
+        return cachedAddress;
+    }
+
     public void logout() {
         System.out.println("\n╔════════════════════════════════════════════╗");
         System.out.println("║  🔄 RÚT THẺ - MASTER KEY TỰ HỦY TRÊN CARD  ║");
@@ -1087,7 +1178,6 @@ public class SmartCardService {
         CommandAPDU apdu = new CommandAPDU(CLA, INS_INIT_CRYPTO, 0x00, 0x00, 1);
         sendAPDU(apdu);
 
-        // Re-generate RSA keys
         apdu = new CommandAPDU(CLA, INS_GEN_RSA_KEYPAIR, 0x00, 0x00, 1);
         ResponseAPDU resp = sendAPDU(apdu);
         if (resp != null && resp.getSW() == 0x9000) {
@@ -1096,6 +1186,7 @@ public class SmartCardService {
         }
 
         pinVerified = false;
+        lastPinVerifyTime = 0;
     }
 
     private String bytesToHex(byte[] bytes) {
@@ -1107,7 +1198,7 @@ public class SmartCardService {
     }
 
     public void printStatus() {
-        System.out.println("\n╔═══════════════ CARD STATUS v2.0 ═══════════════╗");
+        System.out.println("\n╔═══════════════ CARD STATUS v2.1 ═══════════════╗");
         System.out.println("║ Card ID:       " + cardId);
         System.out.println("║ Phone:         " + (recoveryPhone != null ? recoveryPhone : "Not set"));
         System.out.println("║ PIN verified:  " + (pinVerified ? "✅" : "❌"));
@@ -1118,7 +1209,7 @@ public class SmartCardService {
         System.out.println("║ Balance:       " + savedBalance + " VNĐ");
         System.out.println("║ ─────────────────────────────────────────────");
         System.out.println("║ 🔐 Master Key: CHỈ TỒN TẠI TRÊN CARD!");
-        System.out.println("║ 🔐 PC không biết Master Key!");
+        System.out.println("║ 🔐 Mỗi trường được mã hóa riêng biệt!");
         System.out.println("╚════════════════════════════════════════════════╝\n");
     }
 }

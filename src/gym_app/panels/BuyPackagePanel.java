@@ -9,6 +9,11 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.util.List;
 
+/**
+ * Màn hình mua gói tập
+ * 
+ * ✅ v2.1: Thêm xác thực PIN trước khi mua gói
+ */
 public class BuyPackagePanel extends JPanel {
 
     private MainFrame mainFrame;
@@ -39,7 +44,7 @@ public class BuyPackagePanel extends JPanel {
         content.setBackground(new Color(30, 30, 45));
         content.setBorder(new EmptyBorder(30, 40, 30, 40));
 
-        JLabel title = new JLabel(" MUA GÓI TẬP");
+        JLabel title = new JLabel("🛒 MUA GÓI TẬP");
         title.setFont(new Font("Segoe UI", Font.BOLD, 28));
         title.setForeground(new Color(46, 204, 113));
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -262,6 +267,55 @@ public class BuyPackagePanel extends JPanel {
         }
     }
 
+    /**
+     * ✅ MỚI: Xác thực PIN trước khi thực hiện
+     */
+    private boolean confirmPIN() {
+        // Kiểm tra có cần xác thực lại không
+        if (!mainFrame.getCardService().needsPinReconfirmation()) {
+            return true; // Chưa hết timeout, không cần nhập lại
+        }
+        
+        // Hiển thị dialog nhập PIN
+        JPasswordField pinField = new JPasswordField(6);
+        pinField.setFont(new Font("Consolas", Font.BOLD, 24));
+        pinField.setHorizontalAlignment(JTextField.CENTER);
+        
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.add(new JLabel("<html><center>🔐 Nhập mã PIN để xác thực giao dịch<br><small>(Bảo mật tài khoản)</small></center></html>"), BorderLayout.NORTH);
+        panel.add(pinField, BorderLayout.CENTER);
+        
+        int result = JOptionPane.showConfirmDialog(
+            this, 
+            panel, 
+            "Xác thực PIN", 
+            JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.PLAIN_MESSAGE
+        );
+        
+        if (result != JOptionPane.OK_OPTION) {
+            return false;
+        }
+        
+        String pin = new String(pinField.getPassword());
+        
+        if (pin.length() != 6) {
+            showError("PIN phải có 6 chữ số!");
+            return false;
+        }
+        
+        // Verify PIN
+        if (mainFrame.getCardService().reVerifyPIN(pin)) {
+            return true;
+        } else {
+            showError("PIN không đúng!");
+            return false;
+        }
+    }
+
+    /**
+     * ✅ SỬA: Thêm xác thực PIN trước khi mua gói
+     */
     private void doBuyPackage() {
         PackageItem pkgItem = (PackageItem) cboPackage.getSelectedItem();
         TrainerItem trainerItem = (TrainerItem) cboTrainer.getSelectedItem();
@@ -276,7 +330,13 @@ public class BuyPackagePanel extends JPanel {
             return;
         }
 
+        // ✅ MỚI: XÁC THỰC PIN TRƯỚC KHI MUA GÓI
+        if (!confirmPIN()) {
+            return;
+        }
+
         System.out.println("\n[BuyPackage] ====== BẮT ĐẦU MUA GÓI =======");
+        System.out.println("[BuyPackage] 🔐 PIN verified, proceeding...");
 
         // ========== 1. KIỂM TRA & TẠO MEMBER NẾU CHƯA CÓ ==========
         String cardId = mainFrame.getCurrentCardId();
@@ -308,7 +368,6 @@ public class BuyPackagePanel extends JPanel {
                 return;
             }
             
-            // Load lại member
             member = mainFrame.getDbService().getMemberByCardId(cardId);
             if (member == null) {
                 showError("Lỗi hệ thống! Không thể load thông tin member.\nVui lòng thử lại.");
@@ -352,7 +411,7 @@ public class BuyPackagePanel extends JPanel {
         }
         System.out.println("[BuyPackage] Rounded total: " + String.format("%,d VNĐ", roundedTotal));
 
-        // ========== 5. XÁC NHẬN ==========
+        // ========== 5. XÁC NHẬN LẦN CUỐI ==========
         int confirm = JOptionPane.showConfirmDialog(this,
             "<html><center>" +
             "<h3>Xác nhận mua gói?</h3>" +
@@ -360,6 +419,7 @@ public class BuyPackagePanel extends JPanel {
             (trainerId != null ? "<p>HLV: <b>" + trainerItem.trainer.name + "</b></p>" : "") +
             "<p>Tổng: <b style='color:green'>" + String.format("%,d", roundedTotal) + " VNĐ</b></p>" +
             "<p>Còn lại: <b>" + String.format("%,d", balance - roundedTotal) + " VNĐ</b></p>" +
+            "<p style='color:#f1c40f'>🔐 Đã xác thực PIN</p>" +
             "</center></html>",
             "Xác nhận",
             JOptionPane.YES_NO_OPTION
@@ -383,7 +443,6 @@ public class BuyPackagePanel extends JPanel {
         try {
             System.out.println("[BuyPackage] 💾 Saving to database...");
             
-            // Tính ngày hết hạn
             java.sql.Timestamp expireDate = null;
             if (pkgItem.pkg.durationDays != null) {
                 expireDate = new java.sql.Timestamp(
@@ -392,7 +451,6 @@ public class BuyPackagePanel extends JPanel {
                 System.out.println("[BuyPackage] Expire date: " + expireDate);
             }
 
-            // Insert member_packages
             java.sql.Connection conn = mainFrame.getDbService().getConnection();
             String sql = "INSERT INTO member_packages (member_id, package_id, trainer_id, expire_date, remaining_sessions, is_active) " +
                          "VALUES (?, ?, ?, ?, ?, 1)";
@@ -423,11 +481,9 @@ public class BuyPackagePanel extends JPanel {
                 System.out.println("[BuyPackage] ✅ Inserted " + rows + " row(s) into member_packages");
             }
 
-            // Log transaction
             mainFrame.getDbService().logPackagePurchase(cardId, pkgItem.pkg.id, trainerId, roundedTotal, "");
             System.out.println("[BuyPackage] ✅ Transaction logged");
 
-            // Sync balance to database
             long newBalance = mainFrame.getCardService().getBalance();
             mainFrame.getDbService().updateBalance(cardId, newBalance);
             System.out.println("[BuyPackage] ✅ Balance synced to database: " + String.format("%,d VNĐ", newBalance));
@@ -444,6 +500,7 @@ public class BuyPackagePanel extends JPanel {
                     "<p>Thời hạn: <b>" + pkgItem.pkg.durationDays + " ngày</b></p>" : 
                     "<p>Số buổi: <b>" + pkgItem.pkg.sessions + "</b></p>") +
                 "<br><p>Số dư còn lại: <b style='color:blue'>" + String.format("%,d", newBalance) + " VNĐ</b></p>" +
+                "<p style='color:#f1c40f'>🔐 Giao dịch đã được xác thực</p>" +
                 "</center></html>",
                 "Thành công",
                 JOptionPane.INFORMATION_MESSAGE
@@ -456,7 +513,6 @@ public class BuyPackagePanel extends JPanel {
             System.out.println("[BuyPackage] ❌ Database error: " + e.getMessage());
             e.printStackTrace();
             
-            // Hoàn tiền
             System.out.println("[BuyPackage] 🔄 Refunding...");
             mainFrame.getCardService().topup(roundedTotal);
             

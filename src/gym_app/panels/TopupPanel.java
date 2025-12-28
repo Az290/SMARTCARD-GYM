@@ -11,6 +11,8 @@ import java.util.Base64;
 /**
  * Màn hình nạp tiền - Giới hạn theo applet
  * 1 đơn vị = 10,000 VNĐ, max 255 đơn vị/lần = 2,550,000 VNĐ
+ * 
+ *  v2.1: Thêm xác thực PIN trước khi nạp tiền
  */
 public class TopupPanel extends JPanel {
 
@@ -270,6 +272,55 @@ public class TopupPanel extends JPanel {
         }
     }
 
+    /**
+     *  MỚI: Xác thực PIN trước khi thực hiện
+     */
+    private boolean confirmPIN() {
+        // Kiểm tra có cần xác thực lại không
+        if (!mainFrame.getCardService().needsPinReconfirmation()) {
+            return true; // Chưa hết timeout, không cần nhập lại
+        }
+        
+        // Hiển thị dialog nhập PIN
+        JPasswordField pinField = new JPasswordField(6);
+        pinField.setFont(new Font("Consolas", Font.BOLD, 24));
+        pinField.setHorizontalAlignment(JTextField.CENTER);
+        
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.add(new JLabel("<html><center> Nhập mã PIN để xác thực giao dịch<br><small>(Bảo mật tài khoản)</small></center></html>"), BorderLayout.NORTH);
+        panel.add(pinField, BorderLayout.CENTER);
+        
+        int result = JOptionPane.showConfirmDialog(
+            this, 
+            panel, 
+            "Xác thực PIN", 
+            JOptionPane.OK_CANCEL_OPTION,
+            JOptionPane.PLAIN_MESSAGE
+        );
+        
+        if (result != JOptionPane.OK_OPTION) {
+            return false;
+        }
+        
+        String pin = new String(pinField.getPassword());
+        
+        if (pin.length() != 6) {
+            showError("PIN phải có 6 chữ số!");
+            return false;
+        }
+        
+        // Verify PIN
+        if (mainFrame.getCardService().reVerifyPIN(pin)) {
+            return true;
+        } else {
+            showError("PIN không đúng!");
+            return false;
+        }
+    }
+
+    /**
+     *  SỬA: Thêm xác thực PIN trước khi nạp tiền
+     */
     private void doTopup() {
         try {
             String amountStr = txtAmount.getText().replaceAll("[^0-9]", "");
@@ -302,6 +353,15 @@ public class TopupPanel extends JPanel {
                 amount = roundedAmount;
             }
 
+            //  MỚI: XÁC THỰC PIN TRƯỚC KHI NẠP TIỀN
+            if (!confirmPIN()) {
+                return;
+            }
+
+            System.out.println("\n[Topup] ====== BẮT ĐẦU NẠP TIỀN =======");
+            System.out.println("[Topup]  PIN verified, proceeding...");
+            System.out.println("[Topup] Amount: " + formatMoney(amount));
+
             if (mainFrame.getCardService().topup(amount)) {
                 long newBalance = mainFrame.getCardService().getBalance();
 
@@ -316,6 +376,9 @@ public class TopupPanel extends JPanel {
                     sigBase64
                 );
                 mainFrame.getDbService().updateBalance(mainFrame.getCurrentCardId(), newBalance);
+
+                System.out.println("[Topup]  Success! New balance: " + formatMoney(newBalance));
+                System.out.println("[Topup] ====== HOÀN TẤT =======\n");
 
                 showReceipt(amount, newBalance, sigBase64);
                 updateNewBalance();
@@ -333,6 +396,7 @@ public class TopupPanel extends JPanel {
                 txtAmount.setText("");
 
             } else {
+                System.out.println("[Topup]  Failed!");
                 showError("Nạp tiền thất bại!");
             }
 
@@ -356,6 +420,7 @@ public class TopupPanel extends JPanel {
             "<p>Số tiền: <b style='color:#2ecc71'>%s</b></p>" +
             "<p>Số dư mới: <b>%s</b></p>" +
             "<p>Thời gian: %s</p>" +
+            "<p> Đã xác thực PIN</p>" +
             "</html>",
             mainFrame.getCurrentCardId(),
             mainFrame.getCurrentName(),
