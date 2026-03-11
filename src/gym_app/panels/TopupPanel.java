@@ -321,7 +321,7 @@ public class TopupPanel extends JPanel {
     /**
      *  SỬA: Thêm xác thực PIN trước khi nạp tiền
      */
-    private void doTopup() {
+  private void doTopup() {
         try {
             String amountStr = txtAmount.getText().replaceAll("[^0-9]", "");
             if (amountStr.isEmpty()) {
@@ -365,9 +365,18 @@ public class TopupPanel extends JPanel {
             if (mainFrame.getCardService().topup(amount)) {
                 long newBalance = mainFrame.getCardService().getBalance();
 
-                byte[] signature = mainFrame.getCardService().signTransaction((byte) 0x01, amount);
+                // ================== CODE MỚI: TẠO CHỮ KÝ SỐ RSA ==================
+                // Thay thế dòng signTransaction cũ (byte) bằng logic chuỗi mới
+                String timestamp = String.valueOf(System.currentTimeMillis());
+                String txData = "TOPUP|" + amount + "|" + mainFrame.getCurrentCardId() + "|" + timestamp;
+                System.out.println("[Topup] ✍️ Signing data: " + txData);
+                
+                // Gọi hàm signTransaction mới (nhận String)
+                byte[] signature = mainFrame.getCardService().signTransaction(txData);
+                // =================================================================
+
                 String sigBase64 = signature != null && signature.length > 0 ? 
-                    Base64.getEncoder().encodeToString(signature) : "";
+                    java.util.Base64.getEncoder().encodeToString(signature) : "";
 
                 mainFrame.getDbService().logTransaction(
                     mainFrame.getCurrentCardId(),
@@ -388,6 +397,7 @@ public class TopupPanel extends JPanel {
                     "<h2> NẠP TIỀN THÀNH CÔNG!</h2>" +
                     "<p>Số tiền: <b style='color:green'>" + formatMoney(amount) + "</b></p>" +
                     "<p>Số dư mới: <b style='color:blue'>" + formatMoney(newBalance) + "</b></p>" +
+                    "<p style='color:#f1c40f'> Giao dịch đã được ký số RSA</p>" + // Code mới: Thêm thông báo
                     "</center></html>",
                     "Thành công",
                     JOptionPane.INFORMATION_MESSAGE

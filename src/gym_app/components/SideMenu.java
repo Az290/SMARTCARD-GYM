@@ -15,16 +15,16 @@ public class SideMenu extends JPanel {
     private JButton selectedButton = null;
 
     // Menu items
-    private static final String[][] MENU_ITEMS = {
-        {"🏠", "Trang chủ", MainFrame.SCREEN_DASHBOARD},
-        {"💰", "Nạp tiền", MainFrame.SCREEN_TOPUP},
-        {"📦", "Gói tập", MainFrame.SCREEN_PACKAGES},
-        {"🛒", "Mua gói", MainFrame.SCREEN_BUY_PACKAGE},
-        {"🚪", "Check-in", MainFrame.SCREEN_CHECKIN},
-        {"📋", "Lịch sử", MainFrame.SCREEN_HISTORY},
-        {"👤", "Sửa thông tin", MainFrame.SCREEN_PROFILE},
-        {"🔐", "Đổi PIN", MainFrame.SCREEN_CHANGE_PIN},
-    };
+private static final String[][] MENU_ITEMS = {
+    {"", "Trang chủ", MainFrame.SCREEN_DASHBOARD},
+    {"", "Nạp tiền", MainFrame.SCREEN_TOPUP},
+    {"", "Gói tập", MainFrame.SCREEN_PACKAGES},
+    {"", "Mua gói", MainFrame.SCREEN_BUY_PACKAGE},
+    {"", "Check-in", MainFrame.SCREEN_CHECKIN},
+    {"", "Lịch sử", MainFrame.SCREEN_HISTORY},
+    {"", "Sửa thông tin", MainFrame.SCREEN_PROFILE},
+    {"", "Đổi PIN", MainFrame.SCREEN_CHANGE_PIN},
+};
 
     public SideMenu(MainFrame mainFrame) {
         this.mainFrame = mainFrame;
@@ -38,7 +38,7 @@ public class SideMenu extends JPanel {
         setBorder(new EmptyBorder(20, 10, 20, 10));
 
         // Logo
-        JLabel logo = new JLabel("💪 POWER GYM");
+        JLabel logo = new JLabel("POWER GYM");
         logo.setFont(new Font("Segoe UI", Font.BOLD, 20));
         logo.setForeground(new Color(0, 200, 180));
         logo.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -55,7 +55,7 @@ public class SideMenu extends JPanel {
         add(Box.createVerticalGlue());
 
         // Logout button
-    JButton logoutBtn = createMenuItem("💳", "Rút thẻ", null);
+    JButton logoutBtn = createMenuItem("", "Rút thẻ", null);
 logoutBtn.setBackground(new Color(180, 50, 50));
 logoutBtn.addActionListener(e -> {
     int confirm = JOptionPane.showConfirmDialog(

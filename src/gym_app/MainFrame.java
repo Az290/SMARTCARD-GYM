@@ -14,7 +14,8 @@ public class MainFrame extends JFrame {
     private CardLayout cardLayout;
     private JPanel mainContainer;
 
-    // Screen names - BỎ SCREEN_REGISTER
+    // Screen names - THÊM SCREEN_INIT
+    public static final String SCREEN_INIT = "INIT";          // MỚI
     public static final String SCREEN_LOGIN = "LOGIN";
     public static final String SCREEN_DASHBOARD = "DASHBOARD";
     public static final String SCREEN_TOPUP = "TOPUP";
@@ -31,7 +32,8 @@ public class MainFrame extends JFrame {
     private String currentName;
     private String currentPhone;
 
-    // Panels - BỎ registerPanel
+    // Panels - THÊM initCardPanel
+    private InitCardPanel initCardPanel;                      // MỚI
     private LoginPanel loginPanel;
     private DashboardPanel dashboardPanel;
     private HistoryPanel historyPanel;
@@ -66,7 +68,11 @@ public class MainFrame extends JFrame {
     }
 
     private void initPanels() {
-        // Auth panels - BỎ RegisterPanel
+        // ========== MỚI: Init Card Panel ==========
+        initCardPanel = new InitCardPanel(this);
+        mainContainer.add(initCardPanel, SCREEN_INIT);
+        
+        // Auth panels
         loginPanel = new LoginPanel(this);
         mainContainer.add(loginPanel, SCREEN_LOGIN);
         
@@ -99,13 +105,34 @@ public class MainFrame extends JFrame {
         checkinPanel = new CheckinPanel(this);
         mainContainer.add(checkinPanel, SCREEN_CHECKIN);
 
-        showScreen(SCREEN_LOGIN);
+        // ========== MỚI: Kiểm tra thẻ đã init chưa ==========
+        checkAndShowInitialScreen();
+    }
+
+    /**
+     * MỚI: Kiểm tra thẻ đã có SĐT recovery chưa
+     * - Nếu chưa → SCREEN_INIT (bắt buộc nhập SĐT)
+     * - Nếu rồi → SCREEN_LOGIN
+     */
+    private void checkAndShowInitialScreen() {
+        String recoveryPhone = cardService.getRecoveryPhone();
+        
+        if (recoveryPhone == null || recoveryPhone.isEmpty()) {
+            System.out.println("[MainFrame] Thẻ mới chưa có SĐT → Hiển thị INIT");
+            showScreen(SCREEN_INIT);
+        } else {
+            System.out.println("[MainFrame] Thẻ đã có SĐT: " + recoveryPhone + " → Hiển thị LOGIN");
+            showScreen(SCREEN_LOGIN);
+        }
     }
 
     public void showScreen(String screenName) {
         cardLayout.show(mainContainer, screenName);
 
         switch (screenName) {
+            case SCREEN_INIT:                                  // MỚI
+                initCardPanel.onShow();
+                break;
             case SCREEN_LOGIN:
                 loginPanel.onShow();
                 break;
@@ -136,6 +163,14 @@ public class MainFrame extends JFrame {
                 changePinPanel.onShow();
                 break;
         }
+    }
+
+    /**
+     * MỚI: Được gọi từ InitCardPanel sau khi nhập SĐT thành công
+     */
+    public void onCardInitialized(String phone) {
+        System.out.println("[MainFrame] Thẻ đã được khởi tạo với SĐT: " + phone);
+        showScreen(SCREEN_LOGIN);
     }
 
     /**
@@ -173,7 +208,8 @@ public class MainFrame extends JFrame {
         cardService.logout();
         changePinPanel.setNormalMode();
         
-        showScreen(SCREEN_LOGIN);
+        // MỚI: Kiểm tra lại thẻ mới có cần init không
+        checkAndShowInitialScreen();
     }
 
     // ==================== GETTERS ====================

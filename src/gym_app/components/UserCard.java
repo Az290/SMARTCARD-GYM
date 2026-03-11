@@ -38,9 +38,9 @@ public class UserCard extends JPanel {
 
         // Thông tin
         lblName = createLabel("Chưa đăng nhập", 18, Font.BOLD);
-        lblCardId = createLabel("Mã thẻ: ---", 12, Font.PLAIN);
-        lblPhone = createLabel("SĐT: ---", 12, Font.PLAIN);
-        lblBalance = createLabel("💰 0 VNĐ", 16, Font.BOLD);
+        lblCardId = createLabel("Mã thẻ: ", 12, Font.PLAIN);
+        lblPhone = createLabel("SĐT: ", 12, Font.PLAIN);
+        lblBalance = createLabel("0 VNĐ", 16, Font.BOLD);
         lblBalance.setForeground(new Color(46, 204, 113));
         lblStatus = createLabel("⏳ Chưa check-in", 12, Font.PLAIN);
         lblStatus.setForeground(new Color(241, 196, 15));

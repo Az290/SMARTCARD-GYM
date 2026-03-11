@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * Màn hình mua gói tập
  * 
- * ✅ v2.1: Thêm xác thực PIN trước khi mua gói
+ *  v2.1: Thêm xác thực PIN trước khi mua gói
  */
 public class BuyPackagePanel extends JPanel {
 
@@ -44,7 +44,7 @@ public class BuyPackagePanel extends JPanel {
         content.setBackground(new Color(30, 30, 45));
         content.setBorder(new EmptyBorder(30, 40, 30, 40));
 
-        JLabel title = new JLabel("🛒 MUA GÓI TẬP");
+        JLabel title = new JLabel(" MUA GÓI TẬP");
         title.setFont(new Font("Segoe UI", Font.BOLD, 28));
         title.setForeground(new Color(46, 204, 113));
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -59,7 +59,7 @@ public class BuyPackagePanel extends JPanel {
         buttonPanel.setBackground(new Color(30, 30, 45));
         buttonPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        GymButton btnBuy = GymButton.success("✓ XÁC NHẬN MUA GÓI");
+        GymButton btnBuy = GymButton.success(" XÁC NHẬN MUA GÓI");
         btnBuy.setPreferredSize(new Dimension(250, 50));
         btnBuy.addActionListener(e -> doBuyPackage());
 
@@ -101,7 +101,7 @@ public class BuyPackagePanel extends JPanel {
         panel.setMaximumSize(new Dimension(400, 80));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel lblTitle = new JLabel("💰 Số dư hiện tại:");
+        JLabel lblTitle = new JLabel(" Số dư hiện tại:");
         lblTitle.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         lblTitle.setForeground(Color.GRAY);
 
@@ -121,7 +121,7 @@ public class BuyPackagePanel extends JPanel {
         panel.setBackground(new Color(30, 30, 45));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel title = new JLabel("📦 Chọn gói tập:");
+        JLabel title = new JLabel(" Chọn gói tập:");
         title.setFont(new Font("Segoe UI", Font.BOLD, 16));
         title.setForeground(Color.WHITE);
 
@@ -143,7 +143,7 @@ public class BuyPackagePanel extends JPanel {
         panel.setBackground(new Color(30, 30, 45));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel title = new JLabel("👨‍🏫 Chọn huấn luyện viên:");
+        JLabel title = new JLabel("‍ Chọn huấn luyện viên:");
         title.setFont(new Font("Segoe UI", Font.BOLD, 16));
         title.setForeground(Color.WHITE);
 
@@ -170,7 +170,7 @@ public class BuyPackagePanel extends JPanel {
         panel.setMaximumSize(new Dimension(500, 200));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel title = new JLabel("📋 CHI TIẾT");
+        JLabel title = new JLabel(" CHI TIẾT");
         title.setFont(new Font("Segoe UI", Font.BOLD, 16));
         title.setForeground(new Color(46, 204, 113));
 
@@ -268,7 +268,7 @@ public class BuyPackagePanel extends JPanel {
     }
 
     /**
-     * ✅ MỚI: Xác thực PIN trước khi thực hiện
+     *  MỚI: Xác thực PIN trước khi thực hiện
      */
     private boolean confirmPIN() {
         // Kiểm tra có cần xác thực lại không
@@ -282,7 +282,7 @@ public class BuyPackagePanel extends JPanel {
         pinField.setHorizontalAlignment(JTextField.CENTER);
         
         JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.add(new JLabel("<html><center>🔐 Nhập mã PIN để xác thực giao dịch<br><small>(Bảo mật tài khoản)</small></center></html>"), BorderLayout.NORTH);
+        panel.add(new JLabel("<html><center> Nhập mã PIN để xác thực giao dịch<br><small>(Bảo mật tài khoản)</small></center></html>"), BorderLayout.NORTH);
         panel.add(pinField, BorderLayout.CENTER);
         
         int result = JOptionPane.showConfirmDialog(
@@ -314,9 +314,9 @@ public class BuyPackagePanel extends JPanel {
     }
 
     /**
-     * ✅ SỬA: Thêm xác thực PIN trước khi mua gói
+     *  SỬA: Thêm xác thực PIN trước khi mua gói
      */
-    private void doBuyPackage() {
+   private void doBuyPackage() {
         PackageItem pkgItem = (PackageItem) cboPackage.getSelectedItem();
         TrainerItem trainerItem = (TrainerItem) cboTrainer.getSelectedItem();
 
@@ -330,20 +330,20 @@ public class BuyPackagePanel extends JPanel {
             return;
         }
 
-        // ✅ MỚI: XÁC THỰC PIN TRƯỚC KHI MUA GÓI
+        // XÁC THỰC PIN
         if (!confirmPIN()) {
             return;
         }
 
         System.out.println("\n[BuyPackage] ====== BẮT ĐẦU MUA GÓI =======");
-        System.out.println("[BuyPackage] 🔐 PIN verified, proceeding...");
+        System.out.println("[BuyPackage]  PIN verified, proceeding...");
 
         // ========== 1. KIỂM TRA & TẠO MEMBER NẾU CHƯA CÓ ==========
         String cardId = mainFrame.getCurrentCardId();
         DatabaseService.MemberInfo member = mainFrame.getDbService().getMemberByCardId(cardId);
         
         if (member == null) {
-            System.out.println("[BuyPackage] ⚠️ Member not found in database, auto-registering...");
+            System.out.println("[BuyPackage] ️ Member not found in database, auto-registering...");
             
             String name = mainFrame.getCurrentName();
             String phone = mainFrame.getCurrentPhone();
@@ -352,32 +352,42 @@ public class BuyPackagePanel extends JPanel {
                 name = "Khách hàng";
             }
             
+            // --- [FIX] HỎI SĐT NẾU THIẾU ---
             if (phone == null || phone.isEmpty()) {
-                showError("<html><center>" +
-                    "<h3>❌ Không tìm thấy số điện thoại!</h3>" +
-                    "<p>Vui lòng vào <b>Sửa thông tin</b><br>để cập nhật số điện thoại trước khi mua gói.</p>" +
-                    "</center></html>");
-                System.out.println("[BuyPackage] ❌ No phone number found");
-                return;
+                String inputPhone = JOptionPane.showInputDialog(this, 
+                    "Thẻ mới chưa có thông tin.\nVui lòng nhập Số điện thoại để đăng ký:", 
+                    "Yêu cầu thông tin", 
+                    JOptionPane.QUESTION_MESSAGE);
+                
+                if (inputPhone != null && !inputPhone.trim().isEmpty()) {
+                    phone = inputPhone.trim();
+                    // Lưu lại vào MainFrame để dùng cho các màn hình khác
+                    mainFrame.setCurrentPhone(phone);
+                } else {
+                    showError("Cần số điện thoại để đăng ký thành viên!");
+                    System.out.println("[BuyPackage]  No phone number provided by user");
+                    return;
+                }
             }
+            // -------------------------------
             
             boolean registered = mainFrame.getDbService().registerMember(name, phone, cardId);
             if (!registered) {
                 showError("Không thể tạo tài khoản member!\nVui lòng liên hệ quản trị viên.");
-                System.out.println("[BuyPackage] ❌ Failed to register member");
+                System.out.println("[BuyPackage]  Failed to register member");
                 return;
             }
             
             member = mainFrame.getDbService().getMemberByCardId(cardId);
             if (member == null) {
                 showError("Lỗi hệ thống! Không thể load thông tin member.\nVui lòng thử lại.");
-                System.out.println("[BuyPackage] ❌ Failed to load member after registration");
+                System.out.println("[BuyPackage]  Failed to load member after registration");
                 return;
             }
             
-            System.out.println("[BuyPackage] ✅ Auto-registered member: " + name + " (" + cardId + ")");
+            System.out.println("[BuyPackage]  Auto-registered member: " + name + " (" + cardId + ")");
         } else {
-            System.out.println("[BuyPackage] ✅ Member found: " + member.name + " (ID: " + member.id + ")");
+            System.out.println("[BuyPackage]  Member found: " + member.name + " (ID: " + member.id + ")");
         }
 
         // ========== 2. TÍNH TỔNG TIỀN ==========
@@ -400,7 +410,7 @@ public class BuyPackagePanel extends JPanel {
         long balance = mainFrame.getCardService().getBalance();
         if (balance < total) {
             showError("Số dư không đủ!\nCần: " + String.format("%,d", total) + " VNĐ\nCó: " + String.format("%,d", balance) + " VNĐ");
-            System.out.println("[BuyPackage] ❌ Insufficient balance");
+            System.out.println("[BuyPackage]  Insufficient balance");
             return;
         }
 
@@ -419,36 +429,49 @@ public class BuyPackagePanel extends JPanel {
             (trainerId != null ? "<p>HLV: <b>" + trainerItem.trainer.name + "</b></p>" : "") +
             "<p>Tổng: <b style='color:green'>" + String.format("%,d", roundedTotal) + " VNĐ</b></p>" +
             "<p>Còn lại: <b>" + String.format("%,d", balance - roundedTotal) + " VNĐ</b></p>" +
-            "<p style='color:#f1c40f'>🔐 Đã xác thực PIN</p>" +
+            "<p style='color:#f1c40f'> Đã xác thực PIN</p>" +
             "</center></html>",
             "Xác nhận",
             JOptionPane.YES_NO_OPTION
         );
 
         if (confirm != JOptionPane.YES_OPTION) {
-            System.out.println("[BuyPackage] ❌ User cancelled");
+            System.out.println("[BuyPackage]  User cancelled");
             return;
         }
 
         // ========== 6. TRỪ TIỀN TỪ THẺ ==========
-        System.out.println("[BuyPackage] 💳 Deducting balance from card...");
+        System.out.println("[BuyPackage]  Deducting balance from card...");
         if (!mainFrame.getCardService().deductBalance(roundedTotal)) {
             showError("Không thể trừ tiền từ thẻ!\nVui lòng thử lại.");
-            System.out.println("[BuyPackage] ❌ Failed to deduct balance from card");
+            System.out.println("[BuyPackage]  Failed to deduct balance from card");
             return;
         }
-        System.out.println("[BuyPackage] ✅ Balance deducted from card");
+        System.out.println("[BuyPackage]  Balance deducted from card");
+
+        // ================== TẠO CHỮ KÝ SỐ ==================
+        String timestamp = String.valueOf(System.currentTimeMillis());
+        // Định dạng: BUY|ID_GÓI|SỐ_TIỀN|MÃ_THẺ|THỜI_GIAN
+        String txData = "BUY|" + pkgItem.pkg.id + "|" + roundedTotal + "|" + cardId + "|" + timestamp;
+        
+        System.out.println("[BuyPackage] ✍️ Signing transaction...");
+        byte[] signatureBytes = mainFrame.getCardService().signTransaction(txData);
+        
+        String sigBase64 = "";
+        if (signatureBytes != null) {
+            sigBase64 = java.util.Base64.getEncoder().encodeToString(signatureBytes);
+        }
+        // ===================================================
 
         // ========== 7. LƯU VÀO DATABASE ==========
         try {
-            System.out.println("[BuyPackage] 💾 Saving to database...");
+            System.out.println("[BuyPackage]  Saving to database...");
             
             java.sql.Timestamp expireDate = null;
             if (pkgItem.pkg.durationDays != null) {
                 expireDate = new java.sql.Timestamp(
                     System.currentTimeMillis() + (long)pkgItem.pkg.durationDays * 24 * 60 * 60 * 1000
                 );
-                System.out.println("[BuyPackage] Expire date: " + expireDate);
             }
 
             java.sql.Connection conn = mainFrame.getDbService().getConnection();
@@ -477,30 +500,24 @@ public class BuyPackagePanel extends JPanel {
                     ps.setNull(5, java.sql.Types.INTEGER);
                 }
                 
-                int rows = ps.executeUpdate();
-                System.out.println("[BuyPackage] ✅ Inserted " + rows + " row(s) into member_packages");
+                ps.executeUpdate();
             }
 
-            mainFrame.getDbService().logPackagePurchase(cardId, pkgItem.pkg.id, trainerId, roundedTotal, "");
-            System.out.println("[BuyPackage] ✅ Transaction logged");
+            // Ghi log giao dịch kèm chữ ký số
+            mainFrame.getDbService().logPackagePurchase(cardId, pkgItem.pkg.id, trainerId, roundedTotal, sigBase64);
+            System.out.println("[BuyPackage]  Transaction logged");
 
             long newBalance = mainFrame.getCardService().getBalance();
             mainFrame.getDbService().updateBalance(cardId, newBalance);
-            System.out.println("[BuyPackage] ✅ Balance synced to database: " + String.format("%,d VNĐ", newBalance));
-
+            
             System.out.println("[BuyPackage] ====== HOÀN TẤT =======\n");
 
             // ========== 8. THÔNG BÁO THÀNH CÔNG ==========
             JOptionPane.showMessageDialog(this,
                 "<html><center>" +
-                "<h2>✅ MUA GÓI THÀNH CÔNG!</h2>" +
+                "<h2> MUA GÓI THÀNH CÔNG!</h2>" +
                 "<p>Gói: <b>" + pkgItem.pkg.name + "</b></p>" +
-                (trainerId != null ? "<p>HLV: <b>" + trainerItem.trainer.name + "</b></p>" : "") +
-                (pkgItem.pkg.durationDays != null ? 
-                    "<p>Thời hạn: <b>" + pkgItem.pkg.durationDays + " ngày</b></p>" : 
-                    "<p>Số buổi: <b>" + pkgItem.pkg.sessions + "</b></p>") +
-                "<br><p>Số dư còn lại: <b style='color:blue'>" + String.format("%,d", newBalance) + " VNĐ</b></p>" +
-                "<p style='color:#f1c40f'>🔐 Giao dịch đã được xác thực</p>" +
+                "<p style='color:#f1c40f'> Giao dịch đã được ký số RSA</p>" +
                 "</center></html>",
                 "Thành công",
                 JOptionPane.INFORMATION_MESSAGE
@@ -510,16 +527,13 @@ public class BuyPackagePanel extends JPanel {
             updateSummary();
 
         } catch (Exception e) {
-            System.out.println("[BuyPackage] ❌ Database error: " + e.getMessage());
             e.printStackTrace();
-            
-            System.out.println("[BuyPackage] 🔄 Refunding...");
+            // Hoàn tiền nếu lỗi DB
+            System.out.println("[BuyPackage]  Refunding...");
             mainFrame.getCardService().topup(roundedTotal);
-            
-            showError("Lỗi lưu gói tập vào database!\n" + e.getMessage() + "\n\nĐã hoàn tiền về thẻ.");
+            showError("Lỗi lưu gói tập vào database!\nĐã hoàn tiền về thẻ.");
         }
     }
-
     private void showError(String msg) {
         JOptionPane.showMessageDialog(this, msg, "Lỗi", JOptionPane.ERROR_MESSAGE);
     }
@@ -565,7 +579,7 @@ public class BuyPackagePanel extends JPanel {
         @Override
         public String toString() {
             if (trainer == null) return "-- Không cần HLV --";
-            return trainer.name + " - ⭐" + trainer.rating + " (" + trainer.experienceYears + " năm KN)";
+            return trainer.name + " - " + trainer.rating + " (" + trainer.experienceYears + " năm KN)";
         }
     }
 }

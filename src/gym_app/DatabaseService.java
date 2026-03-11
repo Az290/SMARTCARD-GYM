@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DatabaseService {
+
     private Connection conn = null;
 
     public DatabaseService() {
@@ -14,7 +15,7 @@ public class DatabaseService {
     private void connectWithAutoCreate() {
         try {
             // Kết nối tới MySQL
-            String rootUrl = "jdbc:mysql://localhost:3306/?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8";
+            String rootUrl = "jdbc:mysql://localhost:3306/?useSSL=false&serverTimezone=Asia/Ho_Chi_Minh&characterEncoding=UTF-8";
             Connection tempConn = DriverManager.getConnection(rootUrl, "root", "");
 
             Statement stmt = tempConn.createStatement();
@@ -23,7 +24,8 @@ public class DatabaseService {
             tempConn.close();
 
             // Kết nối vào gym_smartcard
-            String dbUrl = "jdbc:mysql://localhost:3306/gym_smartcard?useSSL=false&serverTimezone=UTC&characterEncoding=UTF-8";
+            String dbUrl = "jdbc:mysql://localhost:3306/gym_smartcard?useSSL=false&serverTimezone=Asia/Ho_Chi_Minh&characterEncoding=UTF-8";
+
             conn = DriverManager.getConnection(dbUrl, "root", "");
             System.out.println("✅ Kết nối CSDL gym_smartcard thành công!");
         } catch (Exception e) {
@@ -33,12 +35,13 @@ public class DatabaseService {
     }
 
     // ==================== MEMBERS ====================
-
     /**
      * Đăng ký thành viên mới
      */
     public boolean registerMember(String name, String phone, String cardId) {
-        if (conn == null) return false;
+        if (conn == null) {
+            return false;
+        }
 
         String sql = "INSERT INTO members (card_id, name_enc, phone_enc, phone_hash, balance, status) VALUES (?, ?, ?, ?, 0, 'active')";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -59,7 +62,9 @@ public class DatabaseService {
      * Lấy thông tin member theo card_id
      */
     public MemberInfo getMemberByCardId(String cardId) {
-        if (conn == null) return null;
+        if (conn == null) {
+            return null;
+        }
 
         String sql = "SELECT * FROM members WHERE card_id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -86,7 +91,9 @@ public class DatabaseService {
      * Tìm member theo số điện thoại (dùng hash)
      */
     public MemberInfo getMemberByPhone(String phone) {
-        if (conn == null) return null;
+        if (conn == null) {
+            return null;
+        }
 
         String phoneHash = SecurityUtils.hashPhone(phone);
         String sql = "SELECT * FROM members WHERE phone_hash = ?";
@@ -113,7 +120,9 @@ public class DatabaseService {
      * Cập nhật số dư
      */
     public void updateBalance(String cardId, long balance) {
-        if (conn == null) return;
+        if (conn == null) {
+            return;
+        }
 
         String sql = "UPDATE members SET balance = ? WHERE card_id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -129,7 +138,9 @@ public class DatabaseService {
      * Cập nhật avatar path
      */
     public void updateAvatar(String cardId, String avatarPath) {
-        if (conn == null) return;
+        if (conn == null) {
+            return;
+        }
 
         String sql = "UPDATE members SET avatar_path = ? WHERE card_id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -142,15 +153,16 @@ public class DatabaseService {
     }
 
     // ==================== TRANSACTIONS ====================
-
     /**
      * Ghi log giao dịch (nạp tiền hoặc mua gói)
      */
     public void logTransaction(String cardId, String type, long amount, String signature) {
-        if (conn == null) return;
+        if (conn == null) {
+            return;
+        }
 
-        String sql = "INSERT INTO transactions (member_id, type, amount, signature) " +
-                     "SELECT id, ?, ?, ? FROM members WHERE card_id = ?";
+        String sql = "INSERT INTO transactions (member_id, type, amount, signature) "
+                + "SELECT id, ?, ?, ? FROM members WHERE card_id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, type);
             ps.setLong(2, amount);
@@ -166,10 +178,12 @@ public class DatabaseService {
      * Ghi log mua gói tập (có package_id, trainer_id)
      */
     public void logPackagePurchase(String cardId, int packageId, Integer trainerId, long amount, String signature) {
-        if (conn == null) return;
+        if (conn == null) {
+            return;
+        }
 
-        String sql = "INSERT INTO transactions (member_id, type, amount, package_id, trainer_id, signature) " +
-                     "SELECT id, 'BUY_PACKAGE', ?, ?, ?, ? FROM members WHERE card_id = ?";
+        String sql = "INSERT INTO transactions (member_id, type, amount, package_id, trainer_id, signature) "
+                + "SELECT id, 'BUY_PACKAGE', ?, ?, ?, ? FROM members WHERE card_id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setLong(1, amount);
             ps.setInt(2, packageId);
@@ -189,20 +203,39 @@ public class DatabaseService {
     /**
      * Lấy lịch sử giao dịch
      */
+   /**
+     * Lấy lịch sử tổng hợp (Giao dịch + Check-in)
+     */
     public List<TransactionInfo> getTransactionHistory(String cardId, int limit) {
         List<TransactionInfo> list = new ArrayList<>();
         if (conn == null) return list;
 
-        String sql = "SELECT t.*, p.name as package_name, tr.name as trainer_name " +
-                     "FROM transactions t " +
-                     "JOIN members m ON t.member_id = m.id " +
-                     "LEFT JOIN packages p ON t.package_id = p.id " +
-                     "LEFT JOIN trainers tr ON t.trainer_id = tr.id " +
-                     "WHERE m.card_id = ? " +
-                     "ORDER BY t.trans_time DESC LIMIT ?";
+        // Dùng UNION ALL để gộp bảng transactions và checkins
+        String sql = "SELECT * FROM (" +
+                     // Phần 1: Lấy giao dịch (Nạp tiền / Mua gói)
+                     "  SELECT t.id, t.type, t.amount, p.name as package_name, tr.name as trainer_name, t.trans_time " +
+                     "  FROM transactions t " +
+                     "  JOIN members m ON t.member_id = m.id " +
+                     "  LEFT JOIN packages p ON t.package_id = p.id " +
+                     "  LEFT JOIN trainers tr ON t.trainer_id = tr.id " +
+                     "  WHERE m.card_id = ? " +
+                     
+                     "  UNION ALL " +
+                     
+                     // Phần 2: Lấy lịch sử Check-in (Gán type = 'CHECKIN', amount = 0)
+                     "  SELECT c.id, 'CHECKIN' as type, 0 as amount, NULL as package_name, NULL as trainer_name, c.checkin_time as trans_time " +
+                     "  FROM checkins c " +
+                     "  JOIN members m ON c.member_id = m.id " +
+                     "  WHERE m.card_id = ? " +
+                     ") AS combined_history " +
+                     "ORDER BY trans_time DESC LIMIT ?";
+
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, cardId);
-            ps.setInt(2, limit);
+            // Set tham số cho cả 2 phần SELECT trong UNION
+            ps.setString(1, cardId); // Cho transactions
+            ps.setString(2, cardId); // Cho checkins
+            ps.setInt(3, limit);     // Cho LIMIT
+
             ResultSet rs = ps.executeQuery();
             while (rs.next()) {
                 TransactionInfo t = new TransactionInfo();
@@ -221,13 +254,14 @@ public class DatabaseService {
     }
 
     // ==================== PACKAGES ====================
-
     /**
      * Lấy danh sách gói tập
      */
     public List<PackageInfo> getAllPackages() {
         List<PackageInfo> list = new ArrayList<>();
-        if (conn == null) return list;
+        if (conn == null) {
+            return list;
+        }
 
         String sql = "SELECT * FROM packages ORDER BY id";
         try (Statement stmt = conn.createStatement()) {
@@ -249,13 +283,14 @@ public class DatabaseService {
     }
 
     // ==================== TRAINERS ====================
-
     /**
      * Lấy danh sách HLV đang hoạt động
      */
     public List<TrainerInfo> getAllActiveTrainers() {
         List<TrainerInfo> list = new ArrayList<>();
-        if (conn == null) return list;
+        if (conn == null) {
+            return list;
+        }
 
         String sql = "SELECT * FROM trainers WHERE is_active = 1 ORDER BY rating DESC";
         try (Statement stmt = conn.createStatement()) {
@@ -280,7 +315,9 @@ public class DatabaseService {
      * Lấy giá PT theo trainer và loại gói
      */
     public int getTrainerPrice(int trainerId, String packageType) {
-        if (conn == null) return 0;
+        if (conn == null) {
+            return 0;
+        }
 
         String sql = "SELECT price FROM trainer_prices WHERE trainer_id = ? AND package_type = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -297,21 +334,26 @@ public class DatabaseService {
     }
 
     // ==================== MEMBER PACKAGES ====================
-
     /**
      * Mua gói tập cho member
      */
     public boolean purchasePackage(String cardId, int packageId, Integer trainerId) {
-        if (conn == null) return false;
+        if (conn == null) {
+            return false;
+        }
 
         try {
             // Lấy thông tin gói
             PackageInfo pkg = getPackageById(packageId);
-            if (pkg == null) return false;
+            if (pkg == null) {
+                return false;
+            }
 
             // Lấy member
             MemberInfo member = getMemberByCardId(cardId);
-            if (member == null) return false;
+            if (member == null) {
+                return false;
+            }
 
             // Tính giá
             int totalPrice = pkg.price;
@@ -333,12 +375,12 @@ public class DatabaseService {
             // Tính ngày hết hạn
             Timestamp expireDate = null;
             if (pkg.durationDays != null) {
-                expireDate = new Timestamp(System.currentTimeMillis() + (long)pkg.durationDays * 24 * 60 * 60 * 1000);
+                expireDate = new Timestamp(System.currentTimeMillis() + (long) pkg.durationDays * 24 * 60 * 60 * 1000);
             }
 
             // Thêm vào member_packages
-            String sql = "INSERT INTO member_packages (member_id, package_id, trainer_id, expire_date, remaining_sessions, is_active) " +
-                         "VALUES (?, ?, ?, ?, ?, 1)";
+            String sql = "INSERT INTO member_packages (member_id, package_id, trainer_id, expire_date, remaining_sessions, is_active) "
+                    + "VALUES (?, ?, ?, ?, ?, 1)";
             try (PreparedStatement ps = conn.prepareStatement(sql)) {
                 ps.setInt(1, member.id);
                 ps.setInt(2, packageId);
@@ -373,16 +415,18 @@ public class DatabaseService {
      */
     public List<MemberPackageInfo> getActiveMemberPackages(String cardId) {
         List<MemberPackageInfo> list = new ArrayList<>();
-        if (conn == null) return list;
+        if (conn == null) {
+            return list;
+        }
 
-        String sql = "SELECT mp.*, p.name as package_name, p.duration_days, p.sessions, t.name as trainer_name " +
-                     "FROM member_packages mp " +
-                     "JOIN members m ON mp.member_id = m.id " +
-                     "JOIN packages p ON mp.package_id = p.id " +
-                     "LEFT JOIN trainers t ON mp.trainer_id = t.id " +
-                     "WHERE m.card_id = ? AND mp.is_active = 1 " +
-                     "AND (mp.expire_date IS NULL OR mp.expire_date > NOW()) " +
-                     "AND (mp.remaining_sessions IS NULL OR mp.remaining_sessions > 0)";
+        String sql = "SELECT mp.*, p.name as package_name, p.duration_days, p.sessions, t.name as trainer_name "
+                + "FROM member_packages mp "
+                + "JOIN members m ON mp.member_id = m.id "
+                + "JOIN packages p ON mp.package_id = p.id "
+                + "LEFT JOIN trainers t ON mp.trainer_id = t.id "
+                + "WHERE m.card_id = ? AND mp.is_active = 1 "
+                + "AND (mp.expire_date IS NULL OR mp.expire_date > NOW()) "
+                + "AND (mp.remaining_sessions IS NULL OR mp.remaining_sessions > 0)";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, cardId);
             ResultSet rs = ps.executeQuery();
@@ -402,7 +446,9 @@ public class DatabaseService {
     }
 
     private PackageInfo getPackageById(int id) {
-        if (conn == null) return null;
+        if (conn == null) {
+            return null;
+        }
 
         String sql = "SELECT * FROM packages WHERE id = ?";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -424,12 +470,13 @@ public class DatabaseService {
     }
 
     // ==================== CHECK-IN ====================
-
     /**
      * Ghi nhận check-in
      */
     public boolean checkIn(String cardId) {
-        if (conn == null) return false;
+        if (conn == null) {
+            return false;
+        }
 
         // Kiểm tra có gói còn hạn không
         List<MemberPackageInfo> packages = getActiveMemberPackages(cardId);
@@ -455,11 +502,13 @@ public class DatabaseService {
      * Đếm số lần check-in trong tháng
      */
     public int getMonthlyCheckInCount(String cardId) {
-        if (conn == null) return 0;
+        if (conn == null) {
+            return 0;
+        }
 
-        String sql = "SELECT COUNT(*) as cnt FROM checkins c " +
-                     "JOIN members m ON c.member_id = m.id " +
-                     "WHERE m.card_id = ? AND MONTH(c.checkin_time) = MONTH(NOW()) AND YEAR(c.checkin_time) = YEAR(NOW())";
+        String sql = "SELECT COUNT(*) as cnt FROM checkins c "
+                + "JOIN members m ON c.member_id = m.id "
+                + "WHERE m.card_id = ? AND MONTH(c.checkin_time) = MONTH(NOW()) AND YEAR(c.checkin_time) = YEAR(NOW())";
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, cardId);
             ResultSet rs = ps.executeQuery();
@@ -472,8 +521,96 @@ public class DatabaseService {
         return 0;
     }
 
-    // ==================== UTILITY ====================
+    // ==================== UNLOCK REQUESTS ====================
+    /**
+     * Tạo yêu cầu mở khóa (Dành cho Khách hàng) Xác thực SĐT hash trước khi tạo
+     * request
+     */
+    public boolean createUnlockRequest(String cardId, String phone) {
+        if (conn == null) {
+            return false;
+        }
+        try {
+            // 1. Kiểm tra SĐT có khớp với thẻ không
+            String phoneHash = SecurityUtils.hashPhone(phone);
+            String verifySql = "SELECT id FROM members WHERE card_id = ? AND phone_hash = ?";
 
+            try (PreparedStatement psVerify = conn.prepareStatement(verifySql)) {
+                psVerify.setString(1, cardId);
+                psVerify.setString(2, phoneHash);
+                ResultSet rs = psVerify.executeQuery();
+                if (!rs.next()) {
+                    System.out.println("❌ SĐT không khớp với thẻ!");
+                    return false;
+                }
+            }
+
+            // 2. Kiểm tra xem đã có request PENDING chưa
+            String checkSql = "SELECT id FROM unlock_requests WHERE card_id = ? AND status = 'PENDING'";
+            try (PreparedStatement psCheck = conn.prepareStatement(checkSql)) {
+                psCheck.setString(1, cardId);
+                ResultSet rs = psCheck.executeQuery();
+                if (rs.next()) {
+                    System.out.println("⚠️ Đã có yêu cầu đang chờ duyệt.");
+                    return true; // Coi như thành công vì đã có request
+                }
+            }
+
+            // 3. Tạo request mới
+            String insertSql = "INSERT INTO unlock_requests (card_id, phone, status) VALUES (?, ?, 'PENDING')";
+            try (PreparedStatement ps = conn.prepareStatement(insertSql)) {
+                ps.setString(1, cardId);
+                ps.setString(2, phone);
+                return ps.executeUpdate() > 0;
+            }
+
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * Kiểm tra trạng thái yêu cầu mở khóa của thẻ
+     *
+     * @return "APPROVED", "PENDING", "REJECTED" hoặc null (nếu chưa có)
+     */
+    public String checkRequestStatus(String cardId) {
+        if (conn == null) {
+            return null;
+        }
+        try {
+            String sql = "SELECT status FROM unlock_requests WHERE card_id = ? ORDER BY created_at DESC LIMIT 1";
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ps.setString(1, cardId);
+            ResultSet rs = ps.executeQuery();
+            if (rs.next()) {
+                return rs.getString("status");
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    /**
+     * Xóa yêu cầu mở khóa theo Card ID (Dùng sau khi đã mở khóa thành công)
+     */
+    public void deleteRequestByCardId(String cardId) {
+        if (conn == null) {
+            return;
+        }
+        try {
+            String sql = "DELETE FROM unlock_requests WHERE card_id = ?";
+            PreparedStatement ps = conn.prepareStatement(sql);
+            ps.setString(1, cardId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // ==================== UTILITY ====================
     public Connection getConnection() {
         return conn;
     }
@@ -489,8 +626,8 @@ public class DatabaseService {
     }
 
     // ==================== DATA CLASSES ====================
-
     public static class MemberInfo {
+
         public int id;
         public String cardId;
         public String name;
@@ -501,6 +638,7 @@ public class DatabaseService {
     }
 
     public static class PackageInfo {
+
         public int id;
         public String name;
         public int price;
@@ -510,6 +648,7 @@ public class DatabaseService {
     }
 
     public static class TrainerInfo {
+
         public int id;
         public String name;
         public String phone;
@@ -519,6 +658,7 @@ public class DatabaseService {
     }
 
     public static class TransactionInfo {
+
         public int id;
         public String type;
         public long amount;
@@ -528,6 +668,7 @@ public class DatabaseService {
     }
 
     public static class MemberPackageInfo {
+
         public int id;
         public String packageName;
         public String trainerName;

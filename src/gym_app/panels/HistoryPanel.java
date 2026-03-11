@@ -17,7 +17,7 @@ import java.util.List;
 public class HistoryPanel extends JPanel {
 
     private MainFrame mainFrame;
-    
+
     private JTable transactionTable;
     private DefaultTableModel tableModel;
     private JLabel lblTotalTopup;
@@ -139,8 +139,8 @@ public class HistoryPanel extends JPanel {
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
         card.setBackground(new Color(40, 40, 55));
         card.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(color, 2),
-            new EmptyBorder(15, 20, 15, 20)
+                BorderFactory.createLineBorder(color, 2),
+                new EmptyBorder(15, 20, 15, 20)
         ));
 
         JLabel lblTitle = new JLabel(title);
@@ -170,6 +170,7 @@ public class HistoryPanel extends JPanel {
             "Tất cả",
             "Nạp tiền",
             "Mua gói tập",
+            "Check-in",
             "7 ngày gần nhất",
             "30 ngày gần nhất"
         });
@@ -196,8 +197,8 @@ public class HistoryPanel extends JPanel {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBackground(new Color(40, 40, 55));
         panel.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(new Color(60, 60, 80)),
-            new EmptyBorder(10, 10, 10, 10)
+                BorderFactory.createLineBorder(new Color(60, 60, 80)),
+                new EmptyBorder(10, 10, 10, 10)
         ));
         panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 400));
         panel.setPreferredSize(new Dimension(0, 350));
@@ -245,10 +246,10 @@ public class HistoryPanel extends JPanel {
         // Custom renderer for amount column
         transactionTable.getColumnModel().getColumn(2).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
-            public Component getTableCellRendererComponent(JTable table, Object value, 
+            public Component getTableCellRendererComponent(JTable table, Object value,
                     boolean isSelected, boolean hasFocus, int row, int column) {
                 Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-                
+
                 String amountStr = value != null ? value.toString() : "";
                 if (amountStr.startsWith("+")) {
                     c.setForeground(new Color(46, 204, 113)); // Green for topup
@@ -257,11 +258,11 @@ public class HistoryPanel extends JPanel {
                 } else {
                     c.setForeground(Color.WHITE);
                 }
-                
+
                 if (isSelected) {
                     c.setForeground(Color.WHITE);
                 }
-                
+
                 setHorizontalAlignment(SwingConstants.RIGHT);
                 setBackground(isSelected ? new Color(0, 150, 136) : new Color(50, 50, 65));
                 return c;
@@ -271,7 +272,7 @@ public class HistoryPanel extends JPanel {
         // Custom renderer for type column
         transactionTable.getColumnModel().getColumn(1).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
-            public Component getTableCellRendererComponent(JTable table, Object value, 
+            public Component getTableCellRendererComponent(JTable table, Object value,
                     boolean isSelected, boolean hasFocus, int row, int column) {
                 Component c = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
                 c.setForeground(Color.WHITE);
@@ -313,38 +314,41 @@ public class HistoryPanel extends JPanel {
 
         String cardId = mainFrame.getCurrentCardId();
         if (cardId == null) {
-            lblTotalTopup.setText("0 VNĐ");
-            lblTotalSpent.setText("0 VNĐ");
-            lblTransactionCount.setText("0");
-            return;
+            return; // ... (Giữ nguyên đoạn check null)
         }
-
-        List<DatabaseService.TransactionInfo> transactions = 
-            mainFrame.getDbService().getTransactionHistory(cardId, 100);
+        List<DatabaseService.TransactionInfo> transactions
+                = mainFrame.getDbService().getTransactionHistory(cardId, 100);
 
         long totalTopup = 0;
         long totalSpent = 0;
         int count = 0;
 
-        SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm");
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("dd/MM/yyyy HH:mm");
 
         for (DatabaseService.TransactionInfo tx : transactions) {
             count++;
-
-            String type = tx.type.equals("TOPUP") ? " Nạp tiền" : " Mua gói";
-            String amount = (tx.type.equals("TOPUP") ? "+" : "-") + 
-                           String.format("%,d VNĐ", tx.amount);
+            String type = "";
+            String amount = "";
             String detail = "";
-            
-            if (tx.type.equals("TOPUP")) {
-                totalTopup += tx.amount;
+
+            // Xử lý hiển thị dựa trên loại giao dịch
+            if ("CHECKIN".equalsIgnoreCase(tx.type)) {
+                type = "🏃 Check-in";
+                amount = "---"; // Check-in không tốn tiền
+                detail = "Vào phòng tập";
+            } else if ("TOPUP".equalsIgnoreCase(tx.type)) {
+                type = "💰 Nạp tiền";
+                amount = "+" + String.format("%,d VNĐ", tx.amount);
                 detail = "Nạp tiền vào tài khoản";
-            } else {
-                totalSpent += tx.amount;
+                totalTopup += tx.amount; // Cộng tổng nạp
+            } else { // BUY_PACKAGE
+                type = "🛒 Mua gói";
+                amount = "-" + String.format("%,d VNĐ", tx.amount);
                 detail = tx.packageName != null ? tx.packageName : "Mua gói tập";
                 if (tx.trainerName != null) {
-                    detail += " - HLV: " + tx.trainerName;
+                    detail += " + HLV " + tx.trainerName;
                 }
+                totalSpent += tx.amount; // Cộng tổng chi
             }
 
             String time = tx.transTime != null ? sdf.format(tx.transTime) : "---";
@@ -360,9 +364,10 @@ public class HistoryPanel extends JPanel {
 
     private void applyFilter() {
         String filter = (String) cboFilter.getSelectedItem();
-        if (filter == null) return;
-        
-        // Apply table filter
+        if (filter == null) {
+            return;
+        }
+
         TableRowSorter<DefaultTableModel> sorter = new TableRowSorter<>(tableModel);
         transactionTable.setRowSorter(sorter);
 
@@ -375,34 +380,31 @@ public class HistoryPanel extends JPanel {
             case "Mua gói tập":
                 rf = RowFilter.regexFilter(".*Mua.*", 1);
                 break;
-            case "7 ngày gần nhất":
-            case "30 ngày gần nhất":
-                // Filter theo ngày cần logic phức tạp hơn
-                rf = null;
+            // Thêm case cho Check-in nếu bạn muốn lọc riêng (cần thêm item vào ComboBox trước)
+            case "Check-in":
+                rf = RowFilter.regexFilter(".*Check-in.*", 1);
                 break;
             default:
                 rf = null;
         }
 
         sorter.setRowFilter(rf);
-        
-        // Recalculate summary based on visible rows
-        recalculateSummary();
+        recalculateSummary(); // Tính lại tổng tiền sau khi lọc
     }
-    
+
     private void recalculateSummary() {
         long totalTopup = 0;
         long totalSpent = 0;
         int count = 0;
-        
+
         for (int i = 0; i < transactionTable.getRowCount(); i++) {
             int modelRow = transactionTable.convertRowIndexToModel(i);
             String type = (String) tableModel.getValueAt(modelRow, 1);
             String amountStr = (String) tableModel.getValueAt(modelRow, 2);
-            
+
             // Parse amount
             long amount = parseAmount(amountStr);
-            
+
             if (type.contains("Nạp")) {
                 totalTopup += amount;
             } else {
@@ -410,12 +412,12 @@ public class HistoryPanel extends JPanel {
             }
             count++;
         }
-        
+
         lblTotalTopup.setText(String.format("%,d VNĐ", totalTopup));
         lblTotalSpent.setText(String.format("%,d VNĐ", totalSpent));
         lblTransactionCount.setText(String.valueOf(count));
     }
-    
+
     private long parseAmount(String amountStr) {
         try {
             // Remove +, -, VNĐ, spaces, commas
@@ -430,33 +432,35 @@ public class HistoryPanel extends JPanel {
     private void exportToCSV() {
         if (tableModel.getRowCount() == 0) {
             JOptionPane.showMessageDialog(this,
-                "Không có dữ liệu để xuất!",
-                "Thông báo",
-                JOptionPane.INFORMATION_MESSAGE
+                    "Không có dữ liệu để xuất!",
+                    "Thông báo",
+                    JOptionPane.INFORMATION_MESSAGE
             );
             return;
         }
-        
+
         JFileChooser chooser = new JFileChooser();
-        chooser.setSelectedFile(new java.io.File("lich_su_giao_dich_" + 
-            new SimpleDateFormat("yyyyMMdd").format(new java.util.Date()) + ".csv"));
-        
+        chooser.setSelectedFile(new java.io.File("lich_su_giao_dich_"
+                + new SimpleDateFormat("yyyyMMdd").format(new java.util.Date()) + ".csv"));
+
         if (chooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
             try (java.io.PrintWriter pw = new java.io.PrintWriter(
                     new java.io.OutputStreamWriter(
-                        new java.io.FileOutputStream(chooser.getSelectedFile()), "UTF-8"))) {
-                
+                            new java.io.FileOutputStream(chooser.getSelectedFile()), "UTF-8"))) {
+
                 // BOM for UTF-8 (để Excel đọc được tiếng Việt)
                 pw.print('\ufeff');
-                
+
                 // Header
                 pw.println("STT,Loại,Số tiền,Chi tiết,Thời gian");
-                
+
                 // Data
                 for (int i = 0; i < tableModel.getRowCount(); i++) {
                     StringBuilder sb = new StringBuilder();
                     for (int j = 0; j < tableModel.getColumnCount(); j++) {
-                        if (j > 0) sb.append(",");
+                        if (j > 0) {
+                            sb.append(",");
+                        }
                         Object val = tableModel.getValueAt(i, j);
                         String cell = val != null ? val.toString() : "";
                         // Escape commas and quotes
@@ -467,19 +471,19 @@ public class HistoryPanel extends JPanel {
                     }
                     pw.println(sb.toString());
                 }
-                
+
                 JOptionPane.showMessageDialog(this,
-                    " Xuất file thành công!\n" + chooser.getSelectedFile().getName(),
-                    "Thành công",
-                    JOptionPane.INFORMATION_MESSAGE
+                        " Xuất file thành công!\n" + chooser.getSelectedFile().getName(),
+                        "Thành công",
+                        JOptionPane.INFORMATION_MESSAGE
                 );
-                
+
             } catch (Exception ex) {
                 ex.printStackTrace();
                 JOptionPane.showMessageDialog(this,
-                    " Lỗi xuất file: " + ex.getMessage(),
-                    "Lỗi",
-                    JOptionPane.ERROR_MESSAGE
+                        " Lỗi xuất file: " + ex.getMessage(),
+                        "Lỗi",
+                        JOptionPane.ERROR_MESSAGE
                 );
             }
         }

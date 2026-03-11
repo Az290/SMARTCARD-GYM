@@ -37,7 +37,7 @@ public class LoginPanel extends JPanel {
         container.setPreferredSize(new Dimension(450, 500));
 
         // Logo
-        JLabel logo = new JLabel(" POWER GYM");
+        JLabel logo = new JLabel("POWER GYM");
         logo.setFont(new Font("Segoe UI", Font.BOLD, 32));
         logo.setForeground(new Color(0, 200, 180));
         logo.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -48,13 +48,13 @@ public class LoginPanel extends JPanel {
         subtitle.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         // Card status
-        lblCardStatus = new JLabel(" Đã nhận diện thẻ");
+        lblCardStatus = new JLabel("✅ Đã nhận diện thẻ");
         lblCardStatus.setFont(new Font("Segoe UI", Font.BOLD, 14));
         lblCardStatus.setForeground(new Color(46, 204, 113));
         lblCardStatus.setAlignmentX(Component.CENTER_ALIGNMENT);
 
         // Title
-        JLabel title = new JLabel(" ĐĂNG NHẬP");
+        JLabel title = new JLabel("ĐĂNG NHẬP");
         title.setFont(new Font("Segoe UI", Font.BOLD, 24));
         title.setForeground(Color.WHITE);
         title.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -95,7 +95,7 @@ public class LoginPanel extends JPanel {
         btnLogin.addActionListener(e -> doLogin());
 
         // Forgot PIN button
-        JButton btnForgot = new JButton(" Quên PIN / Mở khóa thẻ");
+        JButton btnForgot = new JButton("Quên PIN / Mở khóa thẻ");
         btnForgot.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         btnForgot.setForeground(new Color(52, 152, 219));
         btnForgot.setContentAreaFilled(false);
@@ -135,6 +135,22 @@ public class LoginPanel extends JPanel {
             return;
         }
 
+        // ========== MỚI: Kiểm tra thẻ đã có SĐT chưa ==========
+        String recoveryPhone = mainFrame.getCardService().getRecoveryPhone();
+        if (recoveryPhone == null || recoveryPhone.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "<html><center>"
+                    + "<h3>⚠️ THẺ CHƯA ĐƯỢC KÍCH HOẠT!</h3>"
+                    + "<p>Vui lòng nhập số điện thoại để kích hoạt thẻ trước.</p>"
+                    + "</center></html>",
+                    "Chưa kích hoạt",
+                    JOptionPane.WARNING_MESSAGE
+            );
+            mainFrame.showScreen(MainFrame.SCREEN_INIT);
+            return;
+        }
+        // ======================================================
+
         // Kiểm tra thẻ bị khóa
         if (mainFrame.getCardService().isCardBlocked()) {
             showCardBlocked();
@@ -162,13 +178,13 @@ public class LoginPanel extends JPanel {
                 }
             }
 
-            System.out.println("[LOGIN]  Login success: " + name);
+            System.out.println("[LOGIN] ✅ Login success: " + name);
 
             // *** KIỂM TRA LẦN ĐẦU ĐĂNG NHẬP ***
             if (mainFrame.getCardService().isFirstLogin()) {
                 JOptionPane.showMessageDialog(this,
                         "<html><center>"
-                        + "<h2>️ ĐỔI PIN BẮT BUỘC</h2>"
+                        + "<h2>⚠️ ĐỔI PIN BẮT BUỘC</h2>"
                         + "<p>Đây là lần đầu tiên bạn đăng nhập.</p>"
                         + "<p>Vui lòng đổi mã PIN để bảo mật tài khoản.</p>"
                         + "</center></html>",
@@ -191,7 +207,7 @@ public class LoginPanel extends JPanel {
             if (tries <= 0 || mainFrame.getCardService().isCardBlocked()) {
                 showCardBlocked();
             } else {
-                lblTries.setText("️ Còn " + tries + " lần thử");
+                lblTries.setText("⚠️ Còn " + tries + " lần thử");
                 lblTries.setForeground(tries <= 2 ? new Color(231, 76, 60) : new Color(241, 196, 15));
                 showError("PIN không đúng!");
             }
@@ -201,7 +217,7 @@ public class LoginPanel extends JPanel {
     }
 
     private void showCardBlocked() {
-        lblCardStatus.setText(" THẺ ĐÃ BỊ KHÓA!");
+        lblCardStatus.setText("🔒 THẺ ĐÃ BỊ KHÓA!");
         lblCardStatus.setForeground(new Color(231, 76, 60));
         lblTries.setText("Nhập sai PIN quá 5 lần");
         lblTries.setForeground(new Color(231, 76, 60));
@@ -209,7 +225,7 @@ public class LoginPanel extends JPanel {
 
         JOptionPane.showMessageDialog(this,
                 "<html><center>"
-                + "<h2> THẺ ĐÃ BỊ KHÓA!</h2>"
+                + "<h2>🔒 THẺ ĐÃ BỊ KHÓA!</h2>"
                 + "<p>Bạn đã nhập sai PIN quá 5 lần.</p>"
                 + "<br>"
                 + "<p>Vui lòng sử dụng chức năng <b>'Quên PIN / Mở khóa thẻ'</b></p>"
@@ -229,15 +245,24 @@ public class LoginPanel extends JPanel {
         txtPin.setText("");
         lblError.setText(" ");
 
+        // ========== MỚI: Kiểm tra thẻ đã có SĐT chưa ==========
+        String recoveryPhone = mainFrame.getCardService().getRecoveryPhone();
+        if (recoveryPhone == null || recoveryPhone.isEmpty()) {
+            System.out.println("[LOGIN] ⚠️ Thẻ chưa có SĐT → Chuyển về INIT");
+            mainFrame.showScreen(MainFrame.SCREEN_INIT);
+            return;
+        }
+        // ======================================================
+
         // Kiểm tra trạng thái thẻ
         if (mainFrame.getCardService().isCardBlocked()) {
-            lblCardStatus.setText(" THẺ ĐÃ BỊ KHÓA!");
+            lblCardStatus.setText("🔒 THẺ ĐÃ BỊ KHÓA!");
             lblCardStatus.setForeground(new Color(231, 76, 60));
             lblTries.setText("Dùng 'Quên PIN' để mở khóa");
             lblTries.setForeground(new Color(231, 76, 60));
             txtPin.setEnabled(false);
         } else {
-            lblCardStatus.setText(" Đã nhận diện thẻ: " + mainFrame.getCardService().getCardId());
+            lblCardStatus.setText("Đã nhận diện thẻ: " + mainFrame.getCardService().getCardId());
             lblCardStatus.setForeground(new Color(46, 204, 113));
 
             int tries = mainFrame.getCardService().getPinTriesRemaining();
